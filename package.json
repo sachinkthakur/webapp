@@ -1,0 +1,21 @@
+{
+  "name": "webapp",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "serve",
+    "build": "echo 'Building...' && copy index.html build/ && copy style.css build/ && copy app.js build/",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "homepage": "https://<your-github-username>.github.io/webapp",
+  "devDependencies": {
+    "gh-pages": "^5.0.0",
+    "serve": "^14.2.0"
+  }
+}
