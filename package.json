@@ -1,21 +1,19 @@
 {
   "name": "webapp",
   "version": "1.0.0",
+  "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "serve",
-    "build": "echo 'Building...' && copy index.html build/ && copy style.css build/ && copy app.js build/",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d build"
+    "deploy": "gh-pages -d build",
+    "build": "@echo off && mkdir build 2>nul && copy index.html build\\ && copy style.css build\\ && copy app.js build\\"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
-  "homepage": "https://<your-github-username>.github.io/webapp",
   "devDependencies": {
     "gh-pages": "^5.0.0",
     "serve": "^14.2.0"
-  }
+  },
+  "homepage": "https://sachinkthakur.github.io/webapp"
 }
