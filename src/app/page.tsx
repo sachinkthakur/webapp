@@ -1,641 +1,601 @@
-'use client';
+"use client";
 
 import type { NextPage } from 'next';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import * as faceapi from 'face-api.js';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { useToast } from '@/components/ui/use-toast'; // Import the hook correctly
-import { Loader2, Camera, CheckCircle, XCircle, MapPin, Clock, User } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast'; // Use the context hook
+import { saveAttendance, getEmployeeById, Employee } from '@/services/attendance';
 import { getCurrentPosition, getAddressFromCoordinates, GeolocationError } from '@/services/geo-location';
-import { saveAttendance, AttendanceRecord, Employee, getEmployeeById } from '@/services/attendance'; // Assuming these functions exist
-import Image from 'next/image';
+import { checkLoginStatus, logoutUser } from '@/services/auth'; // Auth utilities
+import { Camera, MapPin, CheckCircle, XCircle, Loader2, LogOut, AlertTriangle } from 'lucide-react';
+import Image from 'next/image'; // For background
 
-
-// Debounce function
-function debounce<T extends (...args: any[]) => any>(func: T, wait: number): (...args: Parameters<T>) => void {
-  let timeout: NodeJS.Timeout | null = null;
-  return function executedFunction(...args: Parameters<T>) {
-    const later = () => {
-      timeout = null;
-      func(...args);
-    };
-    if (timeout) {
-      clearTimeout(timeout);
-    }
-    timeout = setTimeout(later, wait);
-  };
-}
-
+// Constants
+const FACEAPI_MODEL_URL = '/models';
+const FACE_DETECTION_INTERVAL = 500; // ms
+const FACE_MATCH_THRESHOLD = 0.5; // Stricter threshold
+const CAPTURE_COOLDOWN = 5000; // 5 seconds cooldown after capture
 
 const AttendancePage: NextPage = () => {
-  // ** State Hooks **
+  const router = useRouter();
+  const { toast } = useToast(); // Use the context hook
+
+  // State variables
+  const [employee, setEmployee] = useState<Employee | null>(null);
   const [modelsLoaded, setModelsLoaded] = useState(false);
-  const [videoStream, setVideoStream] = useState<MediaStream | null>(null);
-  const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
+  const [isVideoStreaming, setIsVideoStreaming] = useState(false);
+  const [location, setLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [address, setAddress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isCapturing, setIsCapturing] = useState(false); // For manual capture button state
-  const [isProcessing, setIsProcessing] = useState(false); // For overall processing state (location, face detection, submit)
-  const [detectionProgress, setDetectionProgress] = useState(0); // Progress bar for face detection confidence
-  const [isFaceDetected, setIsFaceDetected] = useState(false); // Flag for stable face detection
-  const [captureCooldownActive, setCaptureCooldownActive] = useState(false); // Cooldown after capture
-  const [statusMessage, setStatusMessage] = useState<string>("Initializing..."); // User feedback
-  const [employee, setEmployee] = useState<Employee | null>(null);
-  const [loggedInUserId, setLoggedInUserId] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true); // Overall loading state
+  const [isCapturing, setIsCapturing] = useState(false); // Specific capture/submit state
+  const [detectionStatus, setDetectionStatus] = useState<'idle' | 'detecting' | 'detected' | 'no_face'>('idle');
+  const [statusMessage, setStatusMessage] = useState<string>("Initializing...");
+  const [progress, setProgress] = useState(0);
+  const [captureCooldownActive, setCaptureCooldownActive] = useState(false);
+  const [isClient, setIsClient] = useState(false); // Track client-side mount
 
-
-  // ** Refs **
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const faceDetectionIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Set isClient on mount
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
-  // ** Hooks **
-  const router = useRouter();
-  const { toast } = useToast(); // Correctly call the hook inside the component body
-
-
-  // ** Constants **
-  const FACE_DETECTION_INTERVAL = 500; // ms
-  const FACE_CONFIDENCE_THRESHOLD = 0.85; // Required confidence for detection
-  const CAPTURE_COOLDOWN = 5000; // ms (5 seconds)
-  const REQUIRED_CONSECUTIVE_DETECTIONS = 3; // Number of stable detections needed
-
-
-  // ** Memoized Values **
-  const consecutiveDetections = useRef<number>(0); // Counter for stable detections
-
-
-  // ** Effects **
-
-  // Check login status and fetch employee data
-   useEffect(() => {
-    const userId = localStorage.getItem('loggedInUser');
-    if (!userId) {
-      toast({ title: 'Not Logged In', description: 'Redirecting to login...', variant: 'destructive' });
-      router.replace('/login');
-      return;
+  // Check login status and load employee data
+  useEffect(() => {
+    if (isClient) { // Only run on client
+      setStatusMessage("Checking login status...");
+      const loggedInUserId = checkLoginStatus();
+      if (!loggedInUserId || loggedInUserId.toLowerCase() === 'admin') {
+        toast({ title: 'Unauthorized Access', description: 'Redirecting to login.', variant: 'destructive' });
+        router.replace('/login');
+      } else {
+        fetchEmployeeData(loggedInUserId);
+      }
     }
-    setLoggedInUserId(userId);
-
-    // Fetch employee details (replace with your actual fetching logic)
-    setStatusMessage('Fetching employee details...');
-    getEmployeeById(userId) // Assuming this function exists and fetches employee data
-      .then(emp => {
-        if (emp) {
-          setEmployee(emp);
-          setStatusMessage('Employee details loaded.');
-        } else {
-          setError('Employee not found.');
-          setStatusMessage('Error: Employee not found.');
-           toast({ title: 'Error', description: 'Employee data not found.', variant: 'destructive' });
-        }
-      })
-      .catch(err => {
-         console.error("Error fetching employee:", err);
-         setError('Failed to fetch employee details.');
-         setStatusMessage('Error: Could not load employee details.');
-          toast({ title: 'Error', description: 'Failed to fetch employee details.', variant: 'destructive' });
-      });
-
-  }, [router, toast]); // Added toast as dependency
-
+  }, [router, toast, isClient]); // Add isClient dependency
 
   // Load FaceAPI models
   useEffect(() => {
-    const loadModels = async () => {
-      const MODEL_URL = '/models'; // Assuming models are in public/models
-       setStatusMessage('Loading AI models...');
-      try {
-        await Promise.all([
-          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-          // faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL), // Optional: if needed for recognition
-          // faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL), // Alternative detector
-        ]);
-        setModelsLoaded(true);
-         setStatusMessage('AI Models loaded. Getting location...');
-        console.log('FaceAPI models loaded successfully.');
-      } catch (err) {
-        console.error('Error loading FaceAPI models:', err);
-        setError('Failed to load face detection models. Please refresh.');
-        setStatusMessage('Error: Failed to load AI models.');
-        toast({ title: 'Model Load Error', description: 'Could not load face detection models.', variant: 'destructive' });
-      }
-    };
-    loadModels();
-  }, [toast]); // Added toast as dependency
+    if (isClient) { // Only run on client
+        const loadModels = async () => {
+          setStatusMessage("Loading recognition models...");
+          try {
+            await Promise.all([
+              faceapi.nets.tinyFaceDetector.loadFromUri(FACEAPI_MODEL_URL),
+              faceapi.nets.faceLandmark68Net.loadFromUri(FACEAPI_MODEL_URL),
+              faceapi.nets.faceRecognitionNet.loadFromUri(FACEAPI_MODEL_URL),
+              // faceapi.nets.faceExpressionNet.loadFromUri(FACEAPI_MODEL_URL) // Optional: if needed
+            ]);
+            setModelsLoaded(true);
+            setStatusMessage("Models loaded successfully.");
+            console.log('FaceAPI models loaded');
+          } catch (err) {
+            console.error('Error loading FaceAPI models:', err);
+            setError("Failed to load face recognition models. Please refresh.");
+            setStatusMessage("Error loading models.");
+          }
+        };
+        loadModels();
+    }
+  }, [isClient]); // Add isClient dependency
 
+  // Get Geolocation and Address
+   const fetchLocationAndAddress = useCallback(async () => {
+     if (!isClient) return; // Ensure client-side execution
+     setStatusMessage("Getting location...");
+     setProgress(25);
+     try {
+       const coords = await getCurrentPosition();
+       setLocation({ latitude: coords.latitude, longitude: coords.longitude });
+       setStatusMessage("Getting address...");
+       setProgress(50);
+       const addr = await getAddressFromCoordinates(coords.latitude, coords.longitude);
+       setAddress(addr);
+       setStatusMessage("Location and address acquired.");
+       setProgress(75);
+     } catch (err) {
+       console.error('Geolocation/Address error:', err);
+       let errMsg = "Could not get location or address.";
+       if (err instanceof GeolocationError) {
+          errMsg = err.message; // Use the specific message from GeolocationError
+       } else if (err instanceof Error) {
+           errMsg = err.message;
+       }
+       setError(errMsg);
+       setLocation(null); // Reset location on error
+       setAddress(null); // Reset address on error
+       setStatusMessage("Error getting location.");
+       setProgress(0);
+     }
+   }, [isClient]); // Add isClient dependency
 
-  // Get location
-  useEffect(() => {
-    if (!modelsLoaded || !loggedInUserId) return; // Wait for models and login
-
-    const fetchLocationAndAddress = async () => {
-       setIsProcessing(true); // Start overall processing indicator
-       setStatusMessage('Getting current location...');
-      try {
-        const coords = await getCurrentPosition();
-        setLocation({ lat: coords.latitude, lon: coords.longitude });
-        setStatusMessage('Location acquired. Getting address...');
-
+   // Fetch employee data
+    const fetchEmployeeData = useCallback(async (userId: string) => {
+        if (!isClient) return; // Ensure client-side execution
+        setStatusMessage("Fetching employee details...");
         try {
-            const addr = await getAddressFromCoordinates(coords.latitude, coords.longitude);
-            setAddress(addr);
-            setStatusMessage('Address acquired. Starting camera...');
-            console.log(`Location: ${coords.latitude}, ${coords.longitude}, Address: ${addr}`);
-            setError(null); // Clear previous errors
-        } catch (addrError) {
-             console.error('Error getting address:', addrError);
-             setAddress('Address lookup failed'); // Provide fallback address
-             setStatusMessage('Could not get address. Starting camera...');
-             toast({ title: 'Address Error', description: 'Could not retrieve address.', variant: 'warning' });
-             // Continue with camera even if address fails
+            const empData = await getEmployeeById(userId);
+            if (empData) {
+                setEmployee(empData);
+                 setStatusMessage(`Welcome, ${empData.name}!`);
+                 // Now fetch location after getting employee data
+                 await fetchLocationAndAddress();
+            } else {
+                setError("Employee details not found. Please contact admin.");
+                setStatusMessage("Error fetching employee data.");
+                logoutUser(); // Log out if employee not found
+                router.replace('/login');
+            }
+        } catch (err) {
+            console.error('Failed to fetch employee data:', err);
+            setError("Could not fetch employee data. Please try again.");
+            setStatusMessage("Error fetching employee data.");
         } finally {
-            startVideoStream(); // Start camera after attempting location/address
+            setIsLoading(false); // Stop overall loading once employee data fetch attempt completes
         }
-
-      } catch (err) {
-        console.error('Error getting location:', err);
-         let userMessage = 'Failed to get location. Please ensure location services are enabled and permissions granted.';
-         if (err instanceof GeolocationError) {
-            userMessage = err.message; // Use the specific message from GeolocationError
-             if (err.code === 3) { // Timeout
-               userMessage = 'Location request timed out. Check GPS/Network and try again.';
-             } else if (err.code === 1) { // Permission denied
-               userMessage = 'Location permission denied. Please enable location access in your browser/device settings.';
-             }
-         }
-         setError(userMessage);
-         setStatusMessage(`Error: ${userMessage}`);
-         toast({ title: 'Location Error', description: userMessage, variant: 'destructive' });
-         setIsProcessing(false); // Stop processing on critical error
-      }
-      // Note: setIsProcessing(false) is called within startVideoStream or if location fails critically
-    };
-
-    fetchLocationAndAddress();
-
-  }, [modelsLoaded, loggedInUserId, toast]); // Added toast as dependency
-
+    }, [router, fetchLocationAndAddress, toast, isClient]); // Add isClient dependency
 
   // Start video stream
-  const startVideoStream = useCallback(() => {
-    if (!modelsLoaded || !location) {
-       console.log("Waiting for models or location to start video...");
-       return; // Don't start if models aren't loaded or location failed critically
-    }
-     setStatusMessage('Starting camera...');
-    navigator.mediaDevices
-      .getUserMedia({
-        video: { facingMode: 'user' }, // Use front camera
+  const startVideo = useCallback(async () => {
+    if (!isClient || !videoRef.current || isVideoStreaming) return; // Check client-side, ref, and streaming status
+    setStatusMessage("Starting camera...");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' }, // Prefer front camera
         audio: false,
-      })
-      .then((stream) => {
-        setVideoStream(stream);
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-           setStatusMessage('Camera active. Position face in center.');
-           setError(null);
-           setIsProcessing(false); // Processing (location phase) is done, now detecting
-        }
-         console.log("Video stream started.");
-      })
-      .catch((err) => {
-        console.error('Error accessing camera:', err);
-        setError('Failed to access camera. Please ensure permissions are granted.');
-        setStatusMessage('Error: Failed to access camera.');
-        setIsProcessing(false); // Stop processing if camera fails
-        toast({ title: 'Camera Error', description: 'Could not access camera.', variant: 'destructive' });
       });
-  }, [modelsLoaded, location, toast]); // Added toast as dependency
+      videoRef.current.srcObject = stream;
+      setIsVideoStreaming(true);
+      setStatusMessage("Camera active. Position your face.");
+      console.log('Video stream started');
+    } catch (err) {
+      console.error('Error accessing camera:', err);
+      setError('Could not access camera. Please ensure permissions are granted and refresh.');
+      setStatusMessage("Camera access denied or failed.");
+      setIsVideoStreaming(false);
+    }
+  }, [isClient, isVideoStreaming]); // Add dependencies
 
 
-  // Face detection loop
-  useEffect(() => {
-    if (!modelsLoaded || !videoStream || !videoRef.current || isProcessing || captureCooldownActive) {
-       // Clear interval if conditions aren't met
-       if (faceDetectionIntervalRef.current) {
-            clearInterval(faceDetectionIntervalRef.current);
-            faceDetectionIntervalRef.current = null;
-            setDetectionProgress(0);
-            setIsFaceDetected(false);
-            consecutiveDetections.current = 0;
-       }
-       return;
+  // Handle video play event - Start face detection only when video is playing
+  const handleVideoPlay = useCallback(() => {
+    if (!isClient || !modelsLoaded || !videoRef.current || !canvasRef.current || intervalRef.current) {
+      console.log("Conditions not met for starting face detection interval.");
+      return; // Exit if not ready
     }
 
-    const video = videoRef.current;
-    const displaySize = { width: video.clientWidth, height: video.clientHeight };
+     console.log("Video playing, starting face detection interval.");
+     setStatusMessage("Detecting face...");
+     setDetectionStatus('detecting');
 
-    if (canvasRef.current) {
+    // Clear any existing interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+
+    intervalRef.current = setInterval(async () => {
+      if (videoRef.current && canvasRef.current && !isCapturing && !captureCooldownActive) {
+        // Match video dimensions
+        canvasRef.current.innerHTML = faceapi.createCanvasFromMedia(videoRef.current).outerHTML;
+        const displaySize = {
+          width: videoRef.current.videoWidth,
+          height: videoRef.current.videoHeight,
+        };
         faceapi.matchDimensions(canvasRef.current, displaySize);
-    }
 
-     setStatusMessage('Detecting face...');
+        // Detect face
+        const detections = await faceapi
+          .detectAllFaces(videoRef.current, new faceapi.TinyFaceDetectorOptions())
+          .withFaceLandmarks()
+          .withFaceDescriptors();
+          // .withFaceExpressions(); // Optional
 
-    faceDetectionIntervalRef.current = setInterval(async () => {
-      if (!videoRef.current || videoRef.current.paused || videoRef.current.ended || captureCooldownActive) {
-         if (faceDetectionIntervalRef.current) clearInterval(faceDetectionIntervalRef.current);
-         return; // Stop if video not playing or in cooldown
+        const resizedDetections = faceapi.resizeResults(detections, displaySize);
+
+        // Clear previous drawings
+        const context = canvasRef.current.getContext('2d');
+        if (context) {
+          context.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        }
+
+        // Draw detections (optional, for debugging/visual feedback)
+         // faceapi.draw.drawDetections(canvasRef.current, resizedDetections);
+         // faceapi.draw.drawFaceLandmarks(canvasRef.current, resizedDetections);
+         // faceapi.draw.drawFaceExpressions(canvasRef.current, resizedDetections);
+
+        if (resizedDetections.length > 0) {
+            if (detectionStatus !== 'detected') {
+                setStatusMessage("Face detected. Hold still.");
+                setDetectionStatus('detected');
+            }
+            // Basic check: Is face reasonably centered and large enough?
+            const { detection } = resizedDetections[0];
+            const box = detection.box;
+            const centerX = box.x + box.width / 2;
+            const centerY = box.y + box.height / 2;
+            const videoCenterX = displaySize.width / 2;
+            const videoCenterY = displaySize.height / 2;
+            const sizeRatio = Math.min(box.width / displaySize.width, box.height / displaySize.height);
+
+            // Example criteria: Center proximity and minimum size
+            const isCentered = Math.abs(centerX - videoCenterX) < displaySize.width * 0.2; // Within 20% of center X
+             // const isVerticallyCentered = Math.abs(centerY - videoCenterY) < displaySize.height * 0.2; // Within 20% of center Y
+            const isLargeEnough = sizeRatio > 0.25; // Face occupies at least 25% of the smaller dimension
+
+           if (isCentered && isLargeEnough) {
+                console.log("Face detected and centered/large enough. Attempting capture.");
+                 setStatusMessage("Face aligned. Capturing...");
+                // Trigger automatic capture
+                await handleAutoCapture();
+            } else {
+                 // Optional: Provide feedback if face is detected but not aligned
+                 setStatusMessage("Face detected. Please center your face.");
+            }
+
+        } else {
+             if (detectionStatus !== 'no_face') {
+                 setStatusMessage("No face detected. Please position your face clearly in the frame.");
+                 setDetectionStatus('no_face');
+             }
+        }
+      } else {
+         // console.log("Skipping detection cycle (capturing or cooldown active).");
       }
-
-      try {
-          const detections = await faceapi.detectAllFaces(
-                video,
-                new faceapi.TinyFaceDetectorOptions({ inputSize: 320 }) // Use a lighter model
-          ).withFaceLandmarks(); //.withFaceDescriptors(); // Add descriptors if needed for recognition
-
-
-          const resizedDetections = faceapi.resizeResults(detections, displaySize);
-
-
-           // --- Visualization (Optional) ---
-           if (canvasRef.current) {
-                const context = canvasRef.current.getContext('2d');
-                if (context) {
-                     context.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-                     // faceapi.draw.drawDetections(canvasRef.current, resizedDetections); // Draw boxes
-                     // faceapi.draw.drawFaceLandmarks(canvasRef.current, resizedDetections); // Draw landmarks
-                }
-           }
-           // --- End Visualization ---
-
-
-          if (resizedDetections.length === 1) {
-                const detectionScore = resizedDetections[0].detection.score;
-                setDetectionProgress(Math.round(detectionScore * 100));
-
-
-                if (detectionScore > FACE_CONFIDENCE_THRESHOLD) {
-                    consecutiveDetections.current++;
-                     setStatusMessage(`Face detected (${consecutiveDetections.current}/${REQUIRED_CONSECUTIVE_DETECTIONS}). Hold still...`);
-                    setIsFaceDetected(true);
-
-
-                    if (consecutiveDetections.current >= REQUIRED_CONSECUTIVE_DETECTIONS && !captureCooldownActive) {
-                         setStatusMessage('Stable face detected! Capturing...');
-                         handleAutoCapture(); // Trigger auto-capture
-                    }
-                } else {
-                    // Confidence below threshold
-                    consecutiveDetections.current = 0; // Reset counter
-                    setIsFaceDetected(false);
-                    setStatusMessage('Face detected, but low confidence. Adjust position.');
-                }
-          } else if (resizedDetections.length > 1) {
-                // Multiple faces detected
-                setDetectionProgress(0);
-                consecutiveDetections.current = 0;
-                setIsFaceDetected(false);
-                setStatusMessage('Multiple faces detected. Ensure only one person is visible.');
-          } else {
-                // No face detected
-                setDetectionProgress(0);
-                consecutiveDetections.current = 0;
-                setIsFaceDetected(false);
-                setStatusMessage('No face detected. Position face in center.');
-          }
-      } catch (err) {
-          console.error("Error during face detection:", err);
-          // Don't stop the loop for detection errors, but maybe log them
-          setStatusMessage('Face detection error. Trying again...');
-      }
-
     }, FACE_DETECTION_INTERVAL);
 
-
-    return () => {
-       // Cleanup interval on unmount or when dependencies change
-       if (faceDetectionIntervalRef.current) {
-            clearInterval(faceDetectionIntervalRef.current);
-            faceDetectionIntervalRef.current = null;
-            console.log("Face detection interval cleared.");
+     // Cleanup function for the interval
+     return () => {
+       if (intervalRef.current) {
+         clearInterval(intervalRef.current);
+         intervalRef.current = null;
+          console.log("Face detection interval cleared.");
        }
-    };
-     // Ensure detection restarts if cooldown ends or processing finishes
-  }, [modelsLoaded, videoStream, isProcessing, captureCooldownActive, startVideoStream, toast]); // Dependencies
+     };
+
+  }, [isClient, modelsLoaded, isCapturing, captureCooldownActive, detectionStatus]); // Add dependencies
 
 
-  // Cleanup video stream on unmount
-  useEffect(() => {
-    return () => {
-      if (videoStream) {
-        videoStream.getTracks().forEach((track) => track.stop());
-         console.log("Video stream stopped on unmount.");
-      }
-      if (faceDetectionIntervalRef.current) {
-            clearInterval(faceDetectionIntervalRef.current);
+  // Stop video stream and cleanup interval
+  const stopVideo = useCallback(() => {
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+      setIsVideoStreaming(false);
+      console.log('Video stream stopped');
+    }
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+       console.log("Face detection interval cleared on stopVideo.");
+    }
+     setDetectionStatus('idle');
+     setStatusMessage("Camera stopped.");
+  }, []); // No dependencies needed
+
+
+   // Effect to start video and location fetching when models are loaded and employee is set
+   useEffect(() => {
+     if (isClient && modelsLoaded && employee && !isLoading && !error) {
+       startVideo();
+       // Location is fetched within fetchEmployeeData now
+     }
+
+     // Cleanup video stream on component unmount
+     return () => {
+        if (isClient) {
+            stopVideo();
         }
-    };
-  }, [videoStream]);
+     };
+   }, [isClient, modelsLoaded, employee, isLoading, startVideo, stopVideo, error]); // Add dependencies
 
-
-  // ** Event Handlers **
-
-  // Capture photo (used by both auto and manual capture)
-  const capturePhoto = useCallback((): string | null => {
-    if (!videoRef.current || !canvasRef.current) {
-      console.error('Video or canvas ref not available for capture.');
-      return null;
-    }
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const context = canvas.getContext('2d');
-    if (!context) {
-      console.error('Could not get canvas context.');
-      return null;
-    }
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/jpeg'); // Get data URL
-  }, []);
+   // Capture Photo Logic (used by both auto and manual capture)
+   const capturePhoto = useCallback((): string | null => {
+       if (videoRef.current) {
+           const tempCanvas = document.createElement('canvas');
+           tempCanvas.width = videoRef.current.videoWidth;
+           tempCanvas.height = videoRef.current.videoHeight;
+           const context = tempCanvas.getContext('2d');
+           if (context) {
+               context.drawImage(videoRef.current, 0, 0, tempCanvas.width, tempCanvas.height);
+               const dataUri = tempCanvas.toDataURL('image/jpeg'); // Use JPEG for smaller size
+               return dataUri;
+           }
+       }
+       return null;
+   }, []); // No dependencies needed
 
 
   // Submit Attendance Data
    const submitAttendance = useCallback(async (photoDataUri: string, captureMethod: 'auto' | 'manual') => {
-    if (!location || !address || !loggedInUserId || !employee) {
-       toast({ title: 'Error', description: 'Missing required data (location, address, user ID, or employee data) for submission.', variant: 'destructive' });
-       return;
-    }
+       if (!employee || !location || !address) {
+           toast({ title: 'Missing Information', description: 'Cannot submit attendance without employee details, location, or address.', variant: 'destructive' });
+           return;
+       }
 
-     setIsProcessing(true); // Indicate submission process
-     setStatusMessage('Submitting attendance...');
+       setIsCapturing(true); // Set capturing state
+       setStatusMessage("Submitting attendance...");
+       setProgress(90);
 
-    const attendanceData: AttendanceRecord = {
-      employeeId: employee.employeeId, // Use the specific employee ID field from your Employee type
-      phone: employee.phone, // Include phone number
-      name: employee.name, // Include name
-      timestamp: new Date(),
-      latitude: location.lat,
-      longitude: location.lon,
-      address: address,
-      photoDataUri: photoDataUri,
-      captureMethod: captureMethod,
-      shiftTiming: employee.shiftTiming, // Include shift timing
-      workingLocation: employee.workingLocation, // Include working location
-    };
+        const attendanceData = {
+            employeeId: employee.employeeId,
+            phone: employee.phone,
+            name: employee.name,
+            timestamp: new Date(),
+            latitude: location.latitude,
+            longitude: location.longitude,
+            address: address,
+            photoDataUri: photoDataUri,
+            captureMethod: captureMethod,
+            shiftTiming: employee.shiftTiming, // Get from employee record
+            workingLocation: employee.workingLocation, // Get from employee record
+            // inTime/outTime will be handled by saveAttendance
+        };
 
-    try {
-       console.log("Submitting attendance:", attendanceData); // Log before sending
-       await saveAttendance(attendanceData);
-       toast({
-            title: 'Attendance Marked Successfully!',
-            description: `Time: ${attendanceData.timestamp.toLocaleTimeString()}`,
-            className: "bg-green-100 dark:bg-green-900", // Success styling
-       });
-       setStatusMessage('Attendance Marked Successfully!');
-       setError(null);
+       try {
+           // Omit 'id' before saving as it's generated by the service
+           const { id, ...dataToSave } = attendanceData;
+           await saveAttendance(dataToSave);
 
-       // Optional: Redirect or show success message persistently
-       // router.push('/success'); // Example redirect
+           toast({
+               title: 'Attendance Marked Successfully!',
+               description: `Time: ${attendanceData.timestamp.toLocaleTimeString()}, Location: ${attendanceData.address}`,
+           });
+            setStatusMessage("Attendance marked successfully!");
+            setProgress(100);
 
-    } catch (err) {
-       console.error('Failed to save attendance:', err);
-       setError('Failed to submit attendance. Please try again.');
-       setStatusMessage('Error: Failed to submit attendance.');
-       toast({
-            title: 'Submission Failed',
-            description: 'Could not save attendance record. Please try again.',
-            variant: 'destructive',
-       });
-    } finally {
-       setIsProcessing(false); // Re-enable interactions
-       // Restart detection after cooldown (even on failure, allow retry)
-       setCaptureCooldownActive(true);
-       setTimeout(() => {
-            setCaptureCooldownActive(false);
-            setStatusMessage('Ready for next detection.');
-            setDetectionProgress(0);
-            consecutiveDetections.current = 0;
-       }, CAPTURE_COOLDOWN);
-    }
-  }, [location, address, loggedInUserId, employee, toast, capturePhoto]); // Added capturePhoto, employee, toast
+           // Activate cooldown
+            setCaptureCooldownActive(true);
+            setTimeout(() => {
+                 setCaptureCooldownActive(false);
+                 setStatusMessage("Ready for next detection or manual capture.");
+                 setDetectionStatus('idle'); // Reset detection status after cooldown
+                 setProgress(0);
+            }, CAPTURE_COOLDOWN);
 
+       } catch (err) {
+           console.error('Failed to save attendance:', err);
+           toast({ title: 'Submission Failed', description: 'Could not save attendance record. Please try again.', variant: 'destructive' });
+           setError("Failed to save attendance.");
+           setStatusMessage("Submission failed. Please try again.");
+           setProgress(0); // Reset progress on error
+       } finally {
+           setIsCapturing(false); // Reset capturing state
+           // Don't reset status message immediately on failure, let user see the error
+       }
+   }, [employee, location, address, toast]); // Add dependencies
 
-  // Auto capture handler
-  const handleAutoCapture = useCallback(() => {
-    if (captureCooldownActive || isProcessing) return; // Prevent rapid captures or during submission
+   // Auto Capture Handler
+    const handleAutoCapture = useCallback(async () => {
+        // Prevent multiple captures in quick succession
+        if (isCapturing || captureCooldownActive) {
+             // console.log("Skipping auto-capture: Already capturing or cooldown active.");
+            return;
+        }
 
-     console.log("Attempting auto-capture...");
-    setCaptureCooldownActive(true); // Activate cooldown immediately
-     setStatusMessage('Capturing photo automatically...');
-    setIsProcessing(true); // Show processing state during capture/submit
+        console.log("Attempting auto-capture...");
+        const photo = capturePhoto();
+        if (photo) {
+            setStatusMessage("Photo captured automatically. Submitting...");
+            await submitAttendance(photo, 'auto');
+        } else {
+             console.error("Auto-capture failed: Could not get photo data.");
+             setStatusMessage("Auto-capture failed. Try manual capture.");
+        }
+    }, [isCapturing, captureCooldownActive, capturePhoto, submitAttendance]); // Add dependencies
 
-    // Stop detection during capture/submit
-    if (faceDetectionIntervalRef.current) {
-        clearInterval(faceDetectionIntervalRef.current);
-        faceDetectionIntervalRef.current = null;
-    }
+    // Manual Capture Handler
+    const handleManualCapture = useCallback(async () => {
+        // Prevent capture if already processing, on cooldown, or camera not ready
+        if (isCapturing || captureCooldownActive || !isVideoStreaming || !location || !address) {
+            let reason = "Cannot capture yet.";
+            if (isCapturing) reason = "Previous capture in progress.";
+            else if (captureCooldownActive) reason = "Please wait before capturing again.";
+            else if (!isVideoStreaming) reason = "Camera not ready.";
+             else if (!location || !address) reason = "Location/Address not available.";
+            toast({ title: 'Capture Unavailable', description: reason, variant: 'warning' });
+            return;
+        }
 
-    const photoData = capturePhoto();
-
-    if (photoData) {
-        submitAttendance(photoData, 'auto');
-        // Cooldown and processing state are managed within submitAttendance's finally block
-    } else {
-        setError('Failed to capture photo automatically.');
-        setStatusMessage('Error: Failed to capture photo.');
-        toast({ title: 'Capture Error', description: 'Could not capture photo.', variant: 'destructive' });
-        setIsProcessing(false); // Reset processing state on capture failure
-        // Restart detection after a short delay to allow user to readjust
-        setTimeout(() => {
-            setCaptureCooldownActive(false); // Allow detection to restart
-             setStatusMessage('Ready for detection.');
-        }, 1500);
-    }
-  }, [captureCooldownActive, isProcessing, capturePhoto, submitAttendance, toast]);
-
-
-  // Manual capture handler
-  const handleManualCapture = useCallback(async () => {
-    if (isProcessing || captureCooldownActive) return; // Prevent action if busy or in cooldown
-
-    console.log("Manual capture initiated...");
-    setIsCapturing(true); // Show loading on button
-    setIsProcessing(true); // Show overall processing
-    setStatusMessage('Capturing photo manually...');
-
-
-    // Stop detection
-    if (faceDetectionIntervalRef.current) {
-        clearInterval(faceDetectionIntervalRef.current);
-        faceDetectionIntervalRef.current = null;
-    }
-
-
-    const photoData = capturePhoto();
-
-
-    if (photoData) {
-        // Submit immediately after manual capture
-        await submitAttendance(photoData, 'manual');
-    } else {
-        setError('Failed to capture photo manually.');
-        setStatusMessage('Error: Failed to capture photo.');
-        toast({ title: 'Capture Error', description: 'Could not capture photo.', variant: 'destructive' });
-        setIsProcessing(false); // Reset processing on failure
-        // Restart detection attempt after delay
-         setCaptureCooldownActive(true);
-         setTimeout(() => {
-            setCaptureCooldownActive(false);
-             setStatusMessage('Ready for detection.');
-        }, CAPTURE_COOLDOWN);
-    }
-    setIsCapturing(false); // Reset button state (managed further in submitAttendance)
-  }, [isProcessing, captureCooldownActive, capturePhoto, submitAttendance, toast]);
-
+         console.log("Attempting manual capture...");
+        const photo = capturePhoto();
+        if (photo) {
+             setStatusMessage("Photo captured manually. Submitting...");
+            await submitAttendance(photo, 'manual');
+        } else {
+            console.error("Manual capture failed: Could not get photo data.");
+            toast({ title: 'Capture Failed', description: 'Could not capture photo from camera.', variant: 'destructive' });
+             setStatusMessage("Manual capture failed.");
+        }
+    }, [isCapturing, captureCooldownActive, isVideoStreaming, location, address, capturePhoto, submitAttendance, toast]); // Add dependencies
 
   // Logout handler
   const handleLogout = useCallback(() => {
-    localStorage.removeItem('loggedInUser');
-    toast({ title: 'Logged Out', description: 'You have been logged out.' });
-    router.replace('/login');
-  }, [router, toast]);
+    stopVideo(); // Stop camera and detection
+    logoutUser(); // Clear session from auth service
+    toast({ title: 'Logged Out', description: 'You have been successfully logged out.' });
+    router.replace('/login'); // Redirect to login page
+  }, [stopVideo, router, toast]); // Add dependencies
 
+   // Render Loading State
+   if (isLoading || !isClient) {
+       return (
+           <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-100 dark:from-gray-800 dark:via-gray-900 dark:to-black p-4">
+                <Loader2 className="h-16 w-16 animate-spin text-primary mb-4" />
+                <p className="text-lg text-muted-foreground">{statusMessage}</p>
+                {progress > 0 && progress < 100 && <Progress value={progress} className="w-1/2 mt-4" />}
+           </div>
+       );
+   }
 
-  // ** Render Logic **
-  const renderStatusIcon = () => {
-    if (isProcessing && !isCapturing) return <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />;
-    if (error) return <XCircle className="h-5 w-5 text-destructive" />;
-    if (statusMessage === 'Attendance Marked Successfully!') return <CheckCircle className="h-5 w-5 text-green-500" />;
-    if (isFaceDetected) return <CheckCircle className="h-5 w-5 text-primary" />;
-    return <Camera className="h-5 w-5 text-muted-foreground" />;
-  };
+   // Render Error State
+   if (error) {
+       return (
+           <div className="flex flex-col items-center justify-center min-h-screen bg-red-50 dark:bg-red-900/20 p-4">
+               <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
+               <h2 className="text-2xl font-semibold text-destructive mb-2">An Error Occurred</h2>
+               <p className="text-center text-destructive/80 mb-6">{error}</p>
+               <Button onClick={() => window.location.reload()} variant="destructive">
+                   Retry / Refresh Page
+               </Button>
+                <Button onClick={handleLogout} variant="outline" className="mt-4">
+                    Logout
+                </Button>
+           </div>
+       );
+   }
 
+  // Render Main Attendance Page
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-100 via-purple-100 to-pink-100 dark:from-gray-800 dark:via-gray-900 dark:to-black p-4">
-      <Card className="w-full max-w-md shadow-xl relative overflow-hidden">
-         {/* Optional decorative background element */}
-         <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-500 to-indigo-600"></div>
+    <div className="relative flex flex-col min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-100 dark:from-gray-800 dark:via-gray-900 dark:to-black p-4 md:p-6">
+       {/* Background Image */}
+       <Image
+         // Replace with a relevant Indian truck photo URL if available
+         src="https://picsum.photos/seed/logisticspattern/1920/1080" // Placeholder pattern
+         alt="Background pattern"
+         layout="fill"
+         objectFit="cover"
+         quality={50} // Lower quality for background pattern
+         className="absolute inset-0 z-0 opacity-10 dark:opacity-5"
+       />
 
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl font-bold">Mark Attendance</CardTitle>
-          {employee && <CardDescription>Welcome, {employee.name}!</CardDescription>}
-           {loggedInUserId === 'admin' && <CardDescription className="text-red-500 font-bold">Admin View (Attendance not applicable)</CardDescription>}
-        </CardHeader>
+       {/* Header */}
+        <header className="relative z-10 mb-4 md:mb-6 flex justify-between items-center">
+            <div className="flex flex-col">
+                 <h1 className="text-2xl md:text-3xl font-bold text-primary">FieldTrack Attendance</h1>
+                 <p className="text-sm text-muted-foreground">E Wheels and Logistics</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={handleLogout}>
+                 <LogOut className="mr-2 h-4 w-4" /> Logout
+            </Button>
+       </header>
 
-        <CardContent className="space-y-4">
-          {/* Video Feed and Canvas */}
-          <div className="relative aspect-video bg-muted rounded-md overflow-hidden border">
+       {/* Main Content */}
+      <div className="relative z-10 flex-grow grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+         {/* Left Column: Camera and Status */}
+        <Card className="shadow-lg overflow-hidden flex flex-col bg-card/90 backdrop-blur-sm dark:bg-card/80">
+          <CardHeader>
+            <CardTitle className="flex items-center">
+                <Camera className="mr-2 h-5 w-5" /> Camera Feed
+            </CardTitle>
+            <CardDescription>
+               {isVideoStreaming ? 'Position your face clearly in the frame.' : 'Camera initializing...'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex-grow flex flex-col items-center justify-center p-2 md:p-4 relative aspect-video">
+            {/* Video Feed */}
             <video
               ref={videoRef}
               autoPlay
-              playsInline
-              muted // Mute to avoid feedback loops if audio was enabled
-              className="absolute top-0 left-0 w-full h-full object-cover"
-              onPlay={() => console.log("Video playing...")} // Debug log
-              />
-            {/* Canvas for drawing detections (optional, keep hidden if not drawing) */}
-            <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full opacity-75" />
-
-            {/* Overlay for status messages */}
-             {!modelsLoaded || isProcessing || error || !videoStream ? (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                  <div className="text-center text-white p-4">
-                    {isProcessing ? <Loader2 className="h-8 w-8 animate-spin mb-2 mx-auto" /> : renderStatusIcon()}
-                    <p className="text-sm font-medium">{statusMessage}</p>
-                     {error && <p className="text-xs text-red-300 mt-1">{error}</p>}
-                  </div>
-                </div>
-             ) : null}
-
-
-             {/* Progress bar for detection confidence */}
-              {modelsLoaded && videoStream && !isProcessing && !error && (
-                   <div className="absolute bottom-2 left-2 right-2 px-2">
-                     <Progress value={detectionProgress} className="w-full h-2" />
-                      <p className="text-xs text-white text-center mt-1 bg-black/50 px-1 rounded">
-                        {statusMessage} {isFaceDetected ? `(${detectionProgress}%)` : ''}
-                      </p>
-                   </div>
-              )}
-          </div>
-
-
-           {/* Location and Address Display */}
-          <div className="space-y-1 text-sm text-muted-foreground border-t pt-4">
-             <div className="flex items-center space-x-2">
-                <User className="h-4 w-4" />
-                <span>ID: {employee?.employeeId ?? loggedInUserId ?? 'Loading...'}</span>
-             </div>
-             <div className="flex items-center space-x-2">
-                <MapPin className="h-4 w-4" />
-                <span>Location: {location ? `${location.lat.toFixed(4)}, ${location.lon.toFixed(4)}` : 'Getting location...'}</span>
-             </div>
-             <div className="flex items-center space-x-2">
-                 {/* Address Icon can be MapPin or a building icon if available */}
-                <MapPin className="h-4 w-4" />
-                <span>Address: {address || 'Getting address...'}</span>
-             </div>
-             <div className="flex items-center space-x-2">
-                <Clock className="h-4 w-4" />
-                <span>Time: {new Date().toLocaleTimeString()}</span>
-             </div>
-             {employee && (
-                 <>
-                    <div className="flex items-center space-x-2">
-                         {/* Icon for shift */}
-                         <Clock className="h-4 w-4" />
-                         <span>Shift: {employee.shiftTiming}</span>
-                    </div>
-                     <div className="flex items-center space-x-2">
-                          {/* Icon for location */}
-                         <MapPin className="h-4 w-4" />
-                         <span>Work Location: {employee.workingLocation}</span>
-                    </div>
-                 </>
+              muted
+              playsInline // Important for mobile browsers
+              className={`w-full h-auto max-h-[60vh] rounded-md bg-black object-cover transform scale-x-[-1] ${!isVideoStreaming ? 'hidden' : ''}`} // Flip video horizontally
+              onPlay={handleVideoPlay} // Start detection when video starts playing
+              onError={(e) => {
+                 console.error("Video error:", e);
+                 setError("Camera feed error. Please refresh.");
+                 setStatusMessage("Camera error.");
+              }}
+            />
+             {/* Canvas for FaceAPI overlay (flipped horizontally to match video) */}
+             <canvas
+               ref={canvasRef}
+               className="absolute top-0 left-0 w-full h-full transform scale-x-[-1]"
+               style={{ maxHeight: 'inherit' }} // Ensure canvas doesn't exceed video height
+             />
+            {/* Placeholder/Loading state for video */}
+             {!isVideoStreaming && (
+               <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/50 rounded-md">
+                 <Loader2 className="h-12 w-12 animate-spin text-primary mb-2" />
+                 <p className="text-muted-foreground">Waiting for camera...</p>
+               </div>
              )}
-          </div>
+          </CardContent>
+          <CardFooter className="p-3 md:p-4 border-t bg-muted/30">
+             <div className="flex items-center justify-between w-full">
+                <div className="flex items-center space-x-2">
+                    {detectionStatus === 'detected' && <CheckCircle className="h-5 w-5 text-green-500" />}
+                    {detectionStatus === 'no_face' && <XCircle className="h-5 w-5 text-destructive" />}
+                    {detectionStatus === 'detecting' && <Loader2 className="h-5 w-5 animate-spin text-primary" />}
+                    <p className="text-sm text-muted-foreground flex-1 truncate" title={statusMessage}>{statusMessage}</p>
+                </div>
+                 {/* Manual Capture Button */}
+                  <Button
+                     onClick={handleManualCapture}
+                     disabled={isCapturing || captureCooldownActive || !isVideoStreaming || !location || !address}
+                     size="sm"
+                  >
+                     {isCapturing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Camera className="mr-2 h-4 w-4" />}
+                     Mark Manually
+                  </Button>
+             </div>
+             {(isCapturing || (progress > 0 && progress < 100)) && (
+               <Progress value={progress} className="w-full mt-2 h-1.5" />
+             )}
+          </CardFooter>
+        </Card>
 
-
-           {/* Manual Capture Button */}
-          <Button
-            onClick={handleManualCapture}
-            disabled={!modelsLoaded || !videoStream || isProcessing || captureCooldownActive || !location || !address || loggedInUserId === 'admin'} // Disable if admin
-            className="w-full"
-            aria-label="Mark Attendance Manually"
-          >
-            {isCapturing ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        {/* Right Column: Employee Info and Location */}
+        <Card className="shadow-lg flex flex-col bg-card/90 backdrop-blur-sm dark:bg-card/80">
+          <CardHeader>
+             <CardTitle>Employee Details</CardTitle>
+             {employee ? (
+               <CardDescription>Welcome, {employee.name}!</CardDescription>
+             ) : (
+                <CardDescription>Loading employee data...</CardDescription>
+             )}
+          </CardHeader>
+          <CardContent className="flex-grow space-y-4 text-sm">
+            {employee ? (
+              <>
+                <p><strong>Employee ID:</strong> {employee.employeeId}</p>
+                <p><strong>Phone:</strong> {employee.phone}</p>
+                 <p><strong>Shift:</strong> {employee.shiftTiming || 'N/A'}</p>
+                 <p><strong>Work Location:</strong> {employee.workingLocation || 'N/A'}</p>
+                 <hr className="my-4 border-border/50"/>
+                 <div className="flex items-start space-x-3">
+                    <MapPin className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+                    <div>
+                        <p className="font-semibold">Current Location:</p>
+                        {location ? (
+                             <p className="text-muted-foreground">{`${location.latitude.toFixed(5)}, ${location.longitude.toFixed(5)}`}</p>
+                        ) : (
+                           <p className="text-muted-foreground italic">Getting location...</p>
+                        )}
+                        {address ? (
+                             <p className="text-muted-foreground mt-1">{address}</p>
+                        ) : (
+                            location && <p className="text-muted-foreground italic mt-1">Fetching address...</p>
+                        )}
+                         {!location && !address && error && ( // Show location error here too
+                            <p className="text-destructive italic mt-1">{error.includes("location") || error.includes("address") ? error : "Could not get location."}</p>
+                         )}
+                    </div>
+                 </div>
+              </>
             ) : (
-              <Camera className="mr-2 h-4 w-4" />
+               <div className="flex items-center justify-center h-full">
+                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
+               </div>
             )}
-            {isCapturing ? 'Capturing...' : 'Mark Attendance Manually'}
-          </Button>
-
-          {/* Logout Button */}
-           <Button
-                variant="outline"
-                onClick={handleLogout}
-                className="w-full"
-                aria-label="Logout"
-            >
-                Logout
-            </Button>
-
-        </CardContent>
-      </Card>
-
-       {/* Hidden canvas for taking snapshots */}
-       <canvas ref={canvasRef} style={{ display: 'none' }}></canvas>
+          </CardContent>
+            <CardFooter className="p-4 border-t bg-muted/30">
+                <p className="text-xs text-muted-foreground">
+                     {captureCooldownActive ? `Cooldown active...` : `Ready to mark attendance.`} Ensure location is accurate.
+                </p>
+            </CardFooter>
+        </Card>
+      </div>
     </div>
   );
 };
 
-
 export default AttendancePage;
-
-// Helper function to get employee data (replace with actual implementation)
-// async function getEmployeeById(userId: string): Promise<Employee | null> {
-//   // This is a placeholder. Implement your actual API call or data fetching logic.
-//   console.log(`Fetching employee data for ID: ${userId}`);
-//   // Example using dummy data stored in localStorage for demo
-//   const employees = JSON.parse(localStorage.getItem('employees') || '[]') as Employee[];
-//   const employee = employees.find(emp => emp.phone === userId || emp.employeeId === userId); // Allow login by phone or ID
-//   return employee || null;
-// }
