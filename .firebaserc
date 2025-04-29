@@ -1,5 +1,15 @@
 {
   "projects": {
     "default": "fieldtrack-yi3zj"
-  }
+  },
+  "targets": {
+    "fieldtrack-yi3zj": {
+      "hosting": {
+        "default": [
+          "fieldtrack-yi3zj"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }
