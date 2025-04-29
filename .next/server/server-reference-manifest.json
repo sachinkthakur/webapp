@@ -1,17 +1,5 @@
 {
-  "node": {
-    "60226cebc4d9a54c50b21ca3e55a07c0e538d0e916": {
-      "workers": {
-        "app/page": {
-          "moduleId": "[project]/.next-internal/server/app/page/actions.js { ACTIONS_MODULE0 => \"[project]/src/services/reverse-geo.ts [app-rsc] (ecmascript)\" } [app-rsc] (server actions loader, ecmascript)",
-          "async": false
-        }
-      },
-      "layer": {
-        "app/page": "action-browser"
-      }
-    }
-  },
+  "node": {},
   "edge": {},
-  "encryptionKey": "JZH/IVazOxQV1Z7LckM1AIa+dn7XohH61XHY1qYGfr0="
+  "encryptionKey": "WfD1OnYqlq2+1Wv/Sw8QsY/sjvEYHtWa9YDnKi1Zkb0="
 }

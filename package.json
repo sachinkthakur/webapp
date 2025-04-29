@@ -1,19 +1,24 @@
 {
   "name": "webapp",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "0.1.0",
+  "description": "A basic Next.js application",
+  "private": true,
+  "author": "Your Name",
+  "license": "MIT",
   "scripts": {
-    "predeploy": "npm run build",
-    "deploy": "gh-pages -d build",
-    "build": "@echo off && mkdir build 2>nul && copy index.html build\\ && copy style.css build\\ && copy app.js build\\"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "dependencies": {
+    "next": "^14.0.3",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
   "devDependencies": {
-    "gh-pages": "^5.0.0",
-    "serve": "^14.2.0"
-  },
-  "homepage": "https://sachinkthakur.github.io/webapp"
+    "@types/node": "22.15.3",
+    "@types/react": "^18.2.38",
+    "typescript": "^5.3.2"
+  }
 }
