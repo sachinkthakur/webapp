@@ -62,7 +62,7 @@ const TableRow = React.forwardRef<
       className
     )}
     {...props}
-  /> // No whitespace before closing tag
+  /> // Ensure no whitespace before closing tag
 ))
 TableRow.displayName = "TableRow"
 
@@ -77,7 +77,7 @@ const TableHead = React.forwardRef<
       className
     )}
     {...props}
-  /> // No whitespace before closing tag
+  /> // Ensure no whitespace before closing tag
 ))
 TableHead.displayName = "TableHead"
 
@@ -89,7 +89,7 @@ const TableCell = React.forwardRef<
     ref={ref}
     className={cn("p-4 align-middle [&:has([role=checkbox])]:pr-0", className)}
     {...props}
-  /> // No whitespace before closing tag
+  /> // Ensure no whitespace before closing tag
 ))
 TableCell.displayName = "TableCell"
 
@@ -101,7 +101,7 @@ const TableCaption = React.forwardRef<
     ref={ref}
     className={cn("mt-4 text-sm text-muted-foreground", className)}
     {...props}
-  /> // No whitespace before closing tag
+  /> // Ensure no whitespace before closing tag
 ))
 TableCaption.displayName = "TableCaption"
 
