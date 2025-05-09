@@ -20,7 +20,7 @@ const AdminPage: NextPage = () => {
   const router = useRouter();
   const { toast } = useToast();
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true); 
+  const [isLoading, setIsLoading] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
@@ -34,34 +34,38 @@ const AdminPage: NextPage = () => {
 
   useEffect(() => {
     if (isClient) {
-      const currentLoginStatus = checkLoginStatus();
-      console.log(`AdminPage: Auth Check. Current login status from checkLoginStatus(): "${currentLoginStatus}"`);
+      setAuthCheckCompleted(false); // Reset before check
+      setIsAdminAuthenticated(false); // Reset before check
 
-      if (currentLoginStatus === 'admin') {
+      const currentLoginStatus = checkLoginStatus();
+      console.log(`AdminPage: Auth Check. Current login status from checkLoginStatus(): "${currentLoginStatus}", type: ${typeof currentLoginStatus}`);
+
+      if (typeof currentLoginStatus === 'string' && currentLoginStatus === 'admin') {
         console.log("AdminPage: User IS admin. Setting isAdminAuthenticated to true.");
         setIsAdminAuthenticated(true);
       } else {
         setIsAdminAuthenticated(false);
         let unauthorizedReason = 'Unknown reason for unauthorized access.';
-        if (currentLoginStatus) { 
-          unauthorizedReason = `User "${currentLoginStatus}" is not an administrator.`;
-        } else { 
-          unauthorizedReason = 'No user is logged in or session is invalid.';
+        if (currentLoginStatus) { // This will be true if currentLoginStatus is "[object Promise]"
+          unauthorizedReason = `User (type: ${typeof currentLoginStatus}, value: "${currentLoginStatus}") is not an administrator. You must be an administrator to view this page.`;
+        } else {
+          unauthorizedReason = 'No user is logged in or session is invalid. You must be an administrator to view this page.';
         }
-        console.log(`AdminPage: User IS NOT admin. Status: "${currentLoginStatus}". Reason: ${unauthorizedReason}. Redirecting to login.`);
+        console.log(`AdminPage: User IS NOT admin. Reason: ${unauthorizedReason}. Redirecting to login.`);
         
-        toast({ 
-          title: 'Unauthorized Access', 
-          description: `${unauthorizedReason} You must be an administrator to view this page. Redirecting...`, 
-          variant: 'destructive' 
+        toast({
+          title: 'Unauthorized Access',
+          description: `${unauthorizedReason} Redirecting...`,
+          variant: 'destructive'
         });
         
-        logoutUser(); 
+        logoutUser(); // Critical: ensure this clears the potentially bad localStorage value
         router.replace('/login');
       }
-      setAuthCheckCompleted(true); 
+      setAuthCheckCompleted(true);
     }
-  }, [isClient, router, toast]);
+  }, [isClient, router, toast]); // Simplified dependency array
+
 
   const fetchRecords = useCallback(async (range?: DateRange) => {
     if (!isClient || !authCheckCompleted || !isAdminAuthenticated) {
@@ -102,7 +106,7 @@ const AdminPage: NextPage = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [toast, isClient, authCheckCompleted, isAdminAuthenticated]); 
+  }, [toast, isClient, authCheckCompleted, isAdminAuthenticated]);
 
   useEffect(() => {
     if (isClient && authCheckCompleted && isAdminAuthenticated) {
@@ -111,8 +115,8 @@ const AdminPage: NextPage = () => {
       const sevenDaysAgo = new Date(today);
       sevenDaysAgo.setDate(today.getDate() - 7);
       const initialRange = { from: sevenDaysAgo, to: today };
-      setDateRange(initialRange); 
-      fetchRecords(initialRange); 
+      setDateRange(initialRange);
+      fetchRecords(initialRange);
     } else if (isClient && authCheckCompleted && !isAdminAuthenticated) {
       console.log("AdminPage: Auth check complete, user not authenticated. Data fetching skipped.");
     }
@@ -283,7 +287,7 @@ const AdminPage: NextPage = () => {
           )}
 
           <div className="mt-4">
-            {isLoading ? ( 
+            {isLoading ? (
               <div className="flex flex-col justify-center items-center h-64 text-center">
                 <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
                 <p className="text-muted-foreground">Loading records for the selected period...</p>
