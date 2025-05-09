@@ -1,10 +1,10 @@
-'use server'; // Keep as server action if possible, but localStorage makes it client-only conceptually
+// Functions using localStorage are inherently client-side dependent.
 
-import type { Employee } from './attendance'; // Assuming Employee type is also here or imported
+import type { Employee } from './attendance'; 
 import { getEmployees } from './attendance';
 
 // For this example, admin password. NEVER do this in production for real credentials.
-const ADMIN_PASSWORD = '12345'; // Reverted to 12345 as per user's latest request
+const ADMIN_PASSWORD = '12345'; 
 
 /**
  * Authenticates a user based on userId and password.
@@ -69,6 +69,7 @@ export const checkLoginStatus = (): string | null => {
            return trimmedValue;
          }
          console.log('[AuthService] checkLoginStatus: Value was empty after trim. Returning null.');
+         // localStorage.removeItem('loggedInUser'); // Clear if empty after trim
          return null; 
        }
        console.log('[AuthService] checkLoginStatus: No value found in localStorage. Returning null.');
