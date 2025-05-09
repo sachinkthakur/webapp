@@ -8,29 +8,25 @@ import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label'; // Keep if used explicitly, otherwise FormLabel is used
+// import { Label } from '@/components/ui/label'; // Not explicitly used, FormLabel is preferred
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { useToast } from '@/hooks/use-toast'; // Using the custom hook from context
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { useToast } from '@/components/ui/use-toast';
 import Image from 'next/image';
-import { authenticateUser, checkLoginStatus, storeLoginSession, logoutUser } from '@/services/auth'; // Use utility functions
+import { authenticateUser, checkLoginStatus, storeLoginSession } from '@/services/auth';
 import { Loader2 } from 'lucide-react';
 
 const loginSchema = z.object({
   userId: z.string().min(1, 'User ID / Phone Number is required'),
-  password: z.string().optional(), // Password optional initially
+  password: z.string().optional(),
 }).refine(data => {
-    // Require password only if userId is 'admin' (case-insensitive)
     if (data.userId.toLowerCase() === 'admin') {
-        // If it's admin, password MUST be present and non-empty
         return !!data.password && data.password.length > 0;
     }
-    // If userId is not admin, password validation is not needed here.
-    // Employee existence is checked in authenticateUser.
     return true;
 }, {
     message: 'Password is required for admin login',
-    path: ['password'], // Specify the path of the error for the password field
+    path: ['password'],
 });
 
 
@@ -41,28 +37,25 @@ const LoginPage: NextPage = () => {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [isClient, setIsClient] = useState(false); // Track if component has mounted
+  const [isClient, setIsClient] = useState(false);
 
-  // Set isClient to true once the component mounts
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // Check login status on mount only on the client
   useEffect(() => {
-    if (isClient) { // Only run when mounted on client
-      const loggedInUser = checkLoginStatus(); // Use utility function
+    if (isClient) {
+      const loggedInUser = checkLoginStatus();
       console.log("Checked login status on mount:", loggedInUser);
-      if (loggedInUser) {
-        // If already logged in, redirect immediately
+      if (loggedInUser && typeof loggedInUser === 'string') { // Ensure loggedInUser is a string
         if (loggedInUser.toLowerCase() === 'admin') {
           router.replace('/admin');
         } else {
-          router.replace('/'); // Redirect employees to attendance page
+          router.replace('/');
         }
       }
     }
-  }, [router, isClient]); // Depend on isClient state
+  }, [router, isClient]);
 
 
   const form = useForm<LoginFormValues>({
@@ -71,29 +64,24 @@ const LoginPage: NextPage = () => {
       userId: '',
       password: '',
     },
-    mode: 'onChange', // Validate on change to show password field dynamically
+    mode: 'onChange',
   });
 
-   // Watch the userId field to show/hide password input
    const watchedUserId = form.watch('userId');
 
-   // Use useEffect to react to changes in watchedUserId
    useEffect(() => {
-       // Show password field if userId is 'admin' (case-insensitive)
-       setShowPassword(watchedUserId?.toLowerCase() === 'admin');
-       // If switching away from admin, clear the password field for better UX
-       if (watchedUserId?.toLowerCase() !== 'admin') {
+       setShowPassword(typeof watchedUserId === 'string' && watchedUserId.toLowerCase() === 'admin');
+       if (typeof watchedUserId === 'string' && watchedUserId.toLowerCase() !== 'admin') {
          form.setValue('password', '');
        }
-   }, [watchedUserId, form]); // Add form to dependency array
+   }, [watchedUserId, form]);
 
 
   const onSubmit = useCallback(async (data: LoginFormValues) => {
     setIsLoading(true);
-    console.log('Login form submitted with data:', data); // Debug log
+    console.log('Login form submitted with data:', data);
 
     try {
-      // Call the authentication function from the service
       const isAuthenticated = await authenticateUser(data.userId, data.password);
       console.log('Authentication result:', isAuthenticated);
 
@@ -103,20 +91,16 @@ const LoginPage: NextPage = () => {
           description: `Welcome, ${data.userId}! Redirecting...`,
         });
 
-        // Store login state using utility function (only on client)
         if (typeof window !== 'undefined') {
-            storeLoginSession(data.userId); // Use utility function
+            storeLoginSession(data.userId);
         }
 
-
-        // Redirect based on user type AFTER state is stored
         if (data.userId.toLowerCase() === 'admin') {
           router.push('/admin');
         } else {
-          router.push('/'); // Redirect employees to attendance page
+          router.push('/');
         }
       } else {
-         // Authentication failed
          toast({
            title: 'Login Failed',
            description: 'Invalid User ID / Phone Number or Password. Please check and try again.',
@@ -124,7 +108,6 @@ const LoginPage: NextPage = () => {
          });
       }
     } catch (error: any) {
-        // Handle unexpected errors during the login process
         console.error('Login error:', error);
          toast({
            title: 'Login Error',
@@ -132,82 +115,76 @@ const LoginPage: NextPage = () => {
            variant: 'destructive',
          });
     } finally {
-      setIsLoading(false); // Ensure loading state is turned off
+      setIsLoading(false);
     }
-  }, [router, toast, form]); // Added form to dependencies for setValue
+  }, [router, toast, form]);
 
 
-  // Render loading state or null if not yet mounted on client
   if (!isClient) {
-    // Optional: Render a loading skeleton or null during SSR/initial hydration
     return (
-        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-100 via-indigo-100 to-purple-200">
-             <Loader2 className="h-16 w-16 animate-spin text-primary" />
+        <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-700 via-indigo-700 to-purple-800">
+             <Loader2 className="h-16 w-16 animate-spin text-white" />
         </div>
     );
   }
 
   return (
-    <div className="relative flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-100 dark:from-gray-800 dark:via-gray-900 dark:to-black p-4 overflow-hidden">
-      {/* Background Image */}
+    <div className="relative flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 dark:from-gray-800 dark:via-gray-900 dark:to-black p-4 overflow-hidden">
       <Image
-        // Replace with a relevant Indian truck photo URL if available
-        src="https://picsum.photos/seed/indiantruck/1920/1080" // Placeholder
+        data-ai-hint="indian truck"
+        src="https://picsum.photos/seed/indiantruck/1920/1080"
         alt="Background truck"
         layout="fill"
         objectFit="cover"
-        quality={70} // Adjust quality for performance
-        className="absolute inset-0 z-0 opacity-20 dark:opacity-10" // Reduced opacity
-        priority // Load image eagerly as it's part of the initial view
+        quality={70}
+        className="absolute inset-0 z-0 opacity-20 dark:opacity-10"
+        priority
       />
-      <Card className="w-full max-w-sm z-10 shadow-2xl bg-card/80 backdrop-blur-sm dark:bg-card/70 border border-border/50"> {/* Adjusted opacity and added border */}
+      <Card className="w-full max-w-sm z-10 shadow-2xl bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm border border-gray-300/50 dark:border-gray-700/50 rounded-xl">
         <CardHeader className="text-center space-y-2">
-          {/* Optional: Add a company logo here */}
-           <div className="mx-auto h-12 w-12 text-primary"> {/* Placeholder Icon/Logo */}
+           <div className="mx-auto h-16 w-16 text-blue-600 dark:text-blue-400">
              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
-               <path d="M12.378 1.602a.75.75 0 0 0-.756 0L3 6.632l9 5.25 9-5.25-8.622-5.03ZM21.75 7.93l-9 5.25v9l8.628-5.032a.75.75 0 0 0 .372-.648V7.93ZM11.25 22.18v-9l-9-5.25v8.57a.75.75 0 0 0 .372.648l8.628 5.032Z" />
+                <path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.035-.84-1.875-1.875-1.875h-.75ZM9.75 8.625c0-1.035.84-1.875 1.875-1.875h.75c1.035 0 1.875.84 1.875 1.875V21.75c0 1.035-.84 1.875-1.875 1.875h-.75c-1.035 0-1.875-.84-1.875-1.875V8.625ZM3 13.125c0-1.035.84-1.875 1.875-1.875h.75c1.035 0 1.875.84 1.875 1.875V21.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 0 1 3 21.75V13.125Z" /> {/* Placeholder for a more relevant logo like a truck or map pin */}
              </svg>
            </div>
-          <CardTitle className="text-2xl font-bold text-primary">FieldTrack Login</CardTitle>
-          <CardDescription className="text-muted-foreground">E Wheels and Logistics Attendance</CardDescription>
+          <CardTitle className="text-3xl font-bold text-blue-700 dark:text-blue-300">FieldTrack Login</CardTitle>
+          <CardDescription className="text-gray-600 dark:text-gray-400">E Wheels and Logistics</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
-            {/* Ensure onSubmit is correctly passed */}
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               <FormField
                 control={form.control}
                 name="userId"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>User ID / Phone Number</FormLabel>
+                    <FormLabel className="text-gray-700 dark:text-gray-300">User ID / Phone Number</FormLabel>
                     <FormControl>
                       <Input
-                        placeholder="Enter admin ID or your phone number"
+                        placeholder="Admin ID or Phone Number"
                         {...field}
                         disabled={isLoading}
-                        className="bg-input/50 dark:bg-input/30" // Slightly transparent input
+                        className="bg-white/70 dark:bg-gray-700/70 border-gray-300 dark:border-gray-600 focus:ring-blue-500 focus:border-blue-500 rounded-lg"
                       />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              {/* Conditionally render password field */}
               {showPassword && (
                  <FormField
                   control={form.control}
                   name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Password</FormLabel>
+                      <FormLabel className="text-gray-700 dark:text-gray-300">Password</FormLabel>
                       <FormControl>
                         <Input
                           type="password"
-                          placeholder="Enter admin password"
+                          placeholder="Admin Password"
                           {...field}
                           disabled={isLoading}
-                          className="bg-input/50 dark:bg-input/30"
+                          className="bg-white/70 dark:bg-gray-700/70 border-gray-300 dark:border-gray-600 focus:ring-blue-500 focus:border-blue-500 rounded-lg"
                         />
                       </FormControl>
                       <FormMessage />
@@ -215,14 +192,14 @@ const LoginPage: NextPage = () => {
                   )}
                 />
               )}
-              <Button type="submit" className="w-full" disabled={isLoading}>
-                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : 'Login'}
+              <Button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white dark:bg-blue-500 dark:hover:bg-blue-600 rounded-lg py-3 text-base font-semibold" disabled={isLoading}>
+                {isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : 'Login'}
               </Button>
             </form>
           </Form>
         </CardContent>
-        <CardFooter className="text-center text-xs text-muted-foreground mt-4">
-          Login with your registered phone number or admin credentials.
+        <CardFooter className="text-center text-sm text-gray-500 dark:text-gray-400 mt-6">
+          Use your registered phone or admin credentials.
         </CardFooter>
       </Card>
     </div>
