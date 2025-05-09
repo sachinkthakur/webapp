@@ -8,28 +8,26 @@ import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label'; // Keep if used explicitly
+// Label removed as FormLabel is used from Form component
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger, DialogClose } from '@/components/ui/dialog';
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { useToast } from '@/hooks/use-toast'; // Use context hook
+import { useToast } from '@/hooks/use-toast';
 import { getEmployees, addEmployee, updateEmployee, deleteEmployee, Employee } from '@/services/attendance';
-import { checkLoginStatus, logoutUser } from '@/services/auth'; // Auth utilities
+import { checkLoginStatus, logoutUser } from '@/services/auth';
 import { PlusCircle, Edit, Trash2, LogOut, ArrowLeft, Loader2, AlertTriangle } from 'lucide-react';
-import Image from 'next/image'; // For background
+import Image from 'next/image';
 
-// Schema for adding/editing an employee
 const employeeSchema = z.object({
-  id: z.string().optional(), // Internal ID, only present when editing
+  id: z.string().optional(),
   employeeId: z.string().min(1, 'Employee ID is required'),
   name: z.string().min(1, 'Name is required'),
-  // Ensure phone number is 10 digits and doesn't start with country code
-   phone: z.string()
+  phone: z.string()
         .length(10, 'Phone number must be exactly 10 digits')
         .regex(/^[6-9]\d{9}$/, 'Invalid Indian mobile number format (must be 10 digits, starting with 6-9)')
-        .trim(), // Trim whitespace
+        .trim(),
   shiftTiming: z.string().min(1, 'Shift Timing is required (e.g., 9 AM - 5 PM)').trim(),
   workingLocation: z.string().min(1, 'Working Location is required').trim(),
 });
@@ -40,18 +38,16 @@ const EmployeeManagementPage: NextPage = () => {
   const router = useRouter();
   const { toast } = useToast();
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [isLoading, setIsLoading] = useState(true); // Loading employees state
-  const [isSubmitting, setIsSubmitting] = useState(false); // Form submission state
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null); // Track employee being edited
-  const [error, setError] = useState<string | null>(null); // Page-level error
-  const [isClient, setIsClient] = useState(false); // Track client-side mount
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isClient, setIsClient] = useState(false);
 
-  // Set isClient on mount
-   useEffect(() => {
+  useEffect(() => {
      setIsClient(true);
-   }, []);
-
+  }, []);
 
   const form = useForm<EmployeeFormValues>({
     resolver: zodResolver(employeeSchema),
@@ -61,36 +57,19 @@ const EmployeeManagementPage: NextPage = () => {
       phone: '',
       shiftTiming: '',
       workingLocation: '',
-      id: undefined, // Explicitly undefined initially
+      id: undefined,
     },
   });
 
-  // Check login status
-   useEffect(() => {
-      if (isClient) { // Only run on client
-         const loggedInUser = checkLoginStatus();
-         if (!loggedInUser || loggedInUser.toLowerCase() !== 'admin') {
-           toast({ title: 'Unauthorized', description: 'Redirecting to login...', variant: 'destructive' });
-           logoutUser();
-           router.replace('/login');
-         } else {
-           fetchEmployees(); // Fetch employees if logged in as admin
-         }
-      }
-   }, [router, toast, isClient]); // Add isClient dependency
-
-  // Fetch employees
   const fetchEmployees = useCallback(async () => {
-     if (!isClient) return; // Ensure client-side execution
+     if (!isClient) return;
 
     setIsLoading(true);
-    setError(null); // Clear previous errors
+    setError(null);
     try {
       const fetchedEmployees = await getEmployees();
-       // Sort employees alphabetically by name for consistent display
        fetchedEmployees.sort((a, b) => a.name.localeCompare(b.name));
       setEmployees(fetchedEmployees);
-       // Avoid toast spamming, maybe only show success on first load if desired
     } catch (error: any) {
       console.error('Failed to fetch employees:', error);
       setError('Could not fetch employee list. Please try refreshing the page.');
@@ -98,17 +77,31 @@ const EmployeeManagementPage: NextPage = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [toast, isClient]); // Add isClient dependency
+  }, [toast, isClient]);
 
-  // Handle opening the dialog for adding or editing
+   useEffect(() => {
+      if (isClient) {
+         const loggedInUser = checkLoginStatus();
+         // More robust check for admin authorization
+         if (typeof loggedInUser === 'string' && loggedInUser.toLowerCase() === 'admin') {
+           // User is admin, proceed to fetch employees
+           fetchEmployees();
+         } else {
+           // Not admin, or loggedInUser is null/not a string
+           toast({ title: 'Unauthorized', description: 'Redirecting to login...', variant: 'destructive' });
+           logoutUser();
+           router.replace('/login');
+         }
+      }
+   }, [router, toast, isClient, fetchEmployees]); // fetchEmployees added as it's called in the effect
+
+
   const handleOpenDialog = (employee: Employee | null = null) => {
     setEditingEmployee(employee);
-    setError(null); // Clear errors when opening dialog
-    form.clearErrors(); // Clear form errors as well
+    setError(null);
+    form.clearErrors();
 
     if (employee) {
-      // Populate form with existing employee data for editing
-      console.log("Editing employee:", employee);
       form.reset({
         id: employee.id,
         employeeId: employee.employeeId,
@@ -118,123 +111,96 @@ const EmployeeManagementPage: NextPage = () => {
         workingLocation: employee.workingLocation,
       });
     } else {
-      // Reset form for adding a new employee
-       console.log("Adding new employee");
       form.reset({
         employeeId: '',
         name: '',
         phone: '',
         shiftTiming: '',
         workingLocation: '',
-        id: undefined, // Ensure id is undefined when adding
+        id: undefined,
       });
     }
     setIsDialogOpen(true);
   };
 
-  // Handle closing the dialog
   const handleCloseDialog = () => {
     setIsDialogOpen(false);
-    setEditingEmployee(null); // Clear editing state
-    form.reset(); // Reset form fields
-    setError(null); // Clear any errors shown in the dialog
+    setEditingEmployee(null);
+    form.reset();
+    setError(null);
   };
 
-  // Handle form submission (add or update)
   const onSubmit = async (data: EmployeeFormValues) => {
     setIsSubmitting(true);
-    setError(null); // Clear previous submission errors
-    console.log("Submitting form data:", data);
+    setError(null);
     try {
       if (editingEmployee && data.id) {
-        // ----- Update existing employee -----
-        // Ensure ID is correctly passed for update
         const updatedData: Employee = {
-             ...data, // Contains potentially updated fields from form
-             id: data.id, // Keep the original internal ID
-             // Ensure all required fields from Employee interface are present
+             ...data,
+             id: data.id,
              employeeId: data.employeeId,
              name: data.name,
              phone: data.phone,
              shiftTiming: data.shiftTiming,
              workingLocation: data.workingLocation,
         };
-         console.log("Attempting to update employee:", updatedData);
         await updateEmployee(updatedData);
         toast({ title: 'Success', description: 'Employee updated successfully.' });
       } else {
-        // ----- Add new employee -----
-        // Remove 'id' before adding, as it's generated by the service
          const { id, ...newData } = data;
-         console.log("Attempting to add employee:", newData);
         await addEmployee(newData);
         toast({ title: 'Success', description: 'Employee added successfully.' });
       }
-      await fetchEmployees(); // Refresh the employee list immediately
-      handleCloseDialog(); // Close the dialog ONLY on success
+      await fetchEmployees();
+      handleCloseDialog();
     } catch (error: any) {
       console.error('Failed to save employee:', error);
        let errorMessage = 'Failed to save employee. Please try again.';
        if (error instanceof Error) {
-         errorMessage = error.message; // Use specific error message if available
+         errorMessage = error.message;
        }
-       // Display error within the dialog or using toast
-       setError(errorMessage); // Set error state to display in dialog footer
-       // Optionally use toast as well:
+       setError(errorMessage);
        toast({ title: 'Save Error', description: errorMessage, variant: 'destructive' });
-       // Keep the dialog open on error so user can correct input
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Handle deleting an employee
   const handleDelete = async (employeeToDelete: Employee) => {
-     // Use the full employee object for better confirmation message
     if (!confirm(`Are you sure you want to delete employee "${employeeToDelete.name}" (ID: ${employeeToDelete.employeeId})? This action cannot be undone.`)) {
       return;
     }
-
-    // Indicate loading state specifically for delete action if needed,
-    // or rely on the main isLoading if fetchEmployees is called after delete.
-    // setIsLoading(true); // Optional: More specific loading state
-    setIsSubmitting(true); // Prevent other actions during delete
-    setError(null); // Clear previous errors
-
+    setIsSubmitting(true);
+    setError(null);
     try {
-       // Ensure we have the internal ID required by the delete function
        if (!employeeToDelete.id) {
           throw new Error("Cannot delete employee: Internal ID is missing.");
        }
-       await deleteEmployee(employeeToDelete.id); // Use internal ID for deletion
+       await deleteEmployee(employeeToDelete.id);
        toast({ title: 'Success', description: `Employee "${employeeToDelete.name}" deleted successfully.` });
-       await fetchEmployees(); // Refresh the list after successful deletion
+       await fetchEmployees();
     } catch (error: any) {
        console.error('Failed to delete employee:', error);
        setError(`Could not delete employee: ${error.message || 'Unknown error'}`);
        toast({ title: 'Deletion Error', description: `Could not delete employee: ${error.message || 'Unknown error'}`, variant: 'destructive' });
     } finally {
-       // setIsLoading(false); // Reset specific loading state if used
-       setIsSubmitting(false); // Re-enable buttons
+       setIsSubmitting(false);
     }
   };
 
-  // Go back to Admin Dashboard
   const goBack = () => {
     router.push('/admin');
   };
 
-  // Logout handler
   const handleLogout = useCallback(() => {
-    logoutUser(); // Use utility
+    logoutUser();
     toast({ title: 'Logged Out', description: 'You have been logged out.' });
     router.replace('/login');
   }, [router, toast]);
 
-   // Render initial loading or null if not client-side yet
    if (!isClient) {
        return (
-           <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-200">
+           <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-200 dark:from-gray-800 dark:via-gray-900 dark:to-black">
                 <Loader2 className="h-16 w-16 animate-spin text-primary" />
            </div>
        );
@@ -242,9 +208,9 @@ const EmployeeManagementPage: NextPage = () => {
 
   return (
     <div className="relative flex flex-col min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-100 dark:from-gray-800 dark:via-gray-900 dark:to-black p-4 md:p-8 overflow-hidden">
-       {/* Background Image */}
        <Image
-         src="https://picsum.photos/seed/employeebg/1920/1080" // Placeholder background
+         data-ai-hint="office background"
+         src="https://picsum.photos/seed/employeebg/1920/1080"
          alt="Employee background"
          layout="fill"
          objectFit="cover"
@@ -252,7 +218,6 @@ const EmployeeManagementPage: NextPage = () => {
          className="absolute inset-0 z-0 opacity-10 dark:opacity-5"
        />
 
-       {/* Header */}
       <header className="relative z-10 mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
          <div className="flex items-center gap-2">
             <Button variant="outline" size="icon" onClick={goBack} aria-label="Go back to admin dashboard">
@@ -261,14 +226,12 @@ const EmployeeManagementPage: NextPage = () => {
             <h1 className="text-2xl md:text-3xl font-bold text-primary">Manage Employees</h1>
          </div>
         <div className="flex gap-2 flex-wrap justify-center md:justify-end">
-          {/* Dialog Trigger Button */}
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button onClick={() => handleOpenDialog()}>
                 <PlusCircle className="mr-2 h-4 w-4" /> Add Employee
               </Button>
             </DialogTrigger>
-             {/* Dialog Content */}
             <DialogContent className="sm:max-w-[480px] z-50 bg-card/95 backdrop-blur-sm dark:bg-card/90 border border-border/50">
               <DialogHeader>
                 <DialogTitle>{editingEmployee ? 'Edit Employee' : 'Add New Employee'}</DialogTitle>
@@ -276,10 +239,8 @@ const EmployeeManagementPage: NextPage = () => {
                   {editingEmployee ? 'Update the details for this employee.' : 'Fill in the details for the new employee. Use their 10-digit phone number for login.'}
                 </DialogDescription>
               </DialogHeader>
-              {/* Form within Dialog */}
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
-                  {/* Employee ID */}
                   <FormField
                     control={form.control}
                     name="employeeId"
@@ -293,7 +254,6 @@ const EmployeeManagementPage: NextPage = () => {
                       </FormItem>
                     )}
                   />
-                  {/* Full Name */}
                   <FormField
                     control={form.control}
                     name="name"
@@ -307,7 +267,6 @@ const EmployeeManagementPage: NextPage = () => {
                       </FormItem>
                     )}
                   />
-                  {/* Phone Number */}
                   <FormField
                     control={form.control}
                     name="phone"
@@ -324,7 +283,6 @@ const EmployeeManagementPage: NextPage = () => {
                       </FormItem>
                     )}
                   />
-                   {/* Shift Timing */}
                    <FormField
                     control={form.control}
                     name="shiftTiming"
@@ -338,7 +296,6 @@ const EmployeeManagementPage: NextPage = () => {
                       </FormItem>
                     )}
                   />
-                  {/* Working Location */}
                    <FormField
                     control={form.control}
                     name="workingLocation"
@@ -352,13 +309,11 @@ const EmployeeManagementPage: NextPage = () => {
                       </FormItem>
                     )}
                   />
-                  {/* Display Submission Error if any */}
                   {error && (
                       <p className="text-sm text-destructive flex items-center gap-2">
                          <AlertTriangle className="h-4 w-4 flex-shrink-0"/> {error}
                       </p>
                   )}
-                  {/* Dialog Actions */}
                   <DialogFooter className="mt-6">
                     <DialogClose asChild>
                          <Button type="button" variant="outline" onClick={handleCloseDialog} disabled={isSubmitting}>
@@ -374,35 +329,30 @@ const EmployeeManagementPage: NextPage = () => {
               </Form>
             </DialogContent>
           </Dialog>
-           {/* Logout Button */}
           <Button variant="outline" onClick={handleLogout}>
             <LogOut className="mr-2 h-4 w-4" /> Logout
           </Button>
         </div>
       </header>
 
-       {/* Main Content Card */}
       <Card className="relative z-10 flex-grow shadow-xl bg-card/90 backdrop-blur-sm dark:bg-card/80 border border-border/50">
         <CardHeader>
           <CardTitle>Registered Employees</CardTitle>
           <CardDescription>List of all employees in the system. Click '+' to add, or use actions to edit/delete.</CardDescription>
         </CardHeader>
         <CardContent>
-          {/* Display Page-level Error if any */}
-           {error && !isDialogOpen && ( // Show page error only if dialog is closed
+           {error && !isDialogOpen && (
                  <div className="mb-4 p-4 bg-destructive/10 border border-destructive/30 rounded-md flex items-center gap-3">
                       <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0" />
                       <p className="text-sm text-destructive">{error}</p>
                  </div>
             )}
-          {/* Loading State */}
           {isLoading ? (
             <div className="flex flex-col justify-center items-center h-64 text-center">
                <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
                <p className="text-muted-foreground">Loading employee list...</p>
             </div>
           ) : (
-             // Employee Table
             <ScrollArea className="h-[60vh] rounded-md border">
               <Table>
                 <TableCaption>
