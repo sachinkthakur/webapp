@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { useToast } from '@/hooks/use-toast'; // Corrected: Ensure this path is valid
+import { useToast } from '@/hooks/use-toast';
 import { getCurrentPosition, getAddressFromCoordinates, GeolocationError } from '@/services/geo-location';
 import { saveAttendance, getEmployeeById, Employee } from '@/services/attendance';
 import { checkLoginStatus, logoutUser } from '@/services/auth';
@@ -25,7 +25,7 @@ const AttendancePage: NextPage = () => {
   const [authCheckCompleted, setAuthCheckCompleted] = useState(false);
 
   // UI and Loading States
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true); // General loading for setup phases
   const [isProcessing, setIsProcessing] = useState(false); // For attendance marking
   const [statusMessage, setStatusMessage] = useState('Initializing...');
   const [progress, setProgress] = useState(0);
@@ -60,26 +60,29 @@ const AttendancePage: NextPage = () => {
     if (!isClient) return;
 
     setStatusMessage("Verifying user...");
+    setProgress(10);
     const currentLoggedInUser = checkLoginStatus();
     console.log("AttendancePage: Auth Check. LoggedInUser from checkLoginStatus():", currentLoggedInUser);
 
     if (!currentLoggedInUser || typeof currentLoggedInUser !== 'string') {
-      toast({ title: 'Authentication Required', description: 'You need to be logged in to mark attendance. Redirecting to login...', variant: 'destructive' });
-      logoutUser(); // Ensure any invalid session is cleared
+      toast({ title: 'Authentication Required', description: 'You need to be logged in. Redirecting...', variant: 'destructive' });
+      logoutUser();
       router.replace('/login');
       return;
     }
     
     if (currentLoggedInUser.toLowerCase() === 'admin') {
         toast({ title: 'Access Denied', description: 'Administrators cannot mark attendance. Redirecting...', variant: 'destructive' });
-        logoutUser(); // Log out admin if they somehow reach employee page
-        router.replace('/login'); // Or router.replace('/admin') if you prefer
+        logoutUser();
+        router.replace('/login');
         return;
     }
 
     setLoggedInUserPhone(currentLoggedInUser);
     setAuthCheckCompleted(true);
     console.log("AttendancePage: User authenticated as employee:", currentLoggedInUser);
+    setStatusMessage("User verified.");
+    setProgress(20);
 
   }, [isClient, router, toast]);
 
@@ -90,6 +93,7 @@ const AttendancePage: NextPage = () => {
 
     const fetchDetails = async () => {
       setStatusMessage("Fetching employee details...");
+      setProgress(30);
       console.log("AttendancePage: Fetching employee details for phone:", loggedInUserPhone);
       try {
         const details = await getEmployeeById(loggedInUserPhone);
@@ -97,6 +101,7 @@ const AttendancePage: NextPage = () => {
           setEmployeeDetails(details);
           console.log("AttendancePage: Employee details fetched:", details);
           setStatusMessage("Employee details loaded.");
+          setProgress(40);
         } else {
           toast({ title: 'Error', description: 'Could not find employee details. Please contact support.', variant: 'destructive' });
           setStatusMessage("Error: Employee details not found.");
@@ -120,6 +125,7 @@ const AttendancePage: NextPage = () => {
     const loadModels = async () => {
       const MODEL_URL = '/models';
       setStatusMessage('Loading face recognition models...');
+      setProgress(50);
       setModelsLoading(true);
       setModelsLoadedError(false);
       try {
@@ -133,13 +139,14 @@ const AttendancePage: NextPage = () => {
         setModelsLoaded(true);
         setStatusMessage('Face recognition models loaded.');
         console.log('Face recognition models loaded successfully.');
-      } catch (error) {
+        setProgress(60);
+      } catch (error: any) {
         console.error('Error loading face recognition models (details):', error);
         setModelsLoadedError(true);
-        setStatusMessage('Error: Face models failed to load. Ensure models are in public/models and refresh.');
+        setStatusMessage(`Error: Face models failed to load. ${error.message || 'Check console for details.'}`);
         toast({
           title: 'Model Loading Error',
-          description: 'Failed to load face recognition models. Please check your internet connection, ensure model files are correctly placed, and then refresh the page.',
+          description: 'Failed to load face recognition models. Please ensure model files are in public/models and refresh.',
           variant: 'destructive',
         });
       } finally {
@@ -147,34 +154,36 @@ const AttendancePage: NextPage = () => {
       }
     };
 
-    if (isClient && authCheckCompleted && loggedInUserPhone && !modelsLoaded && !modelsLoading && !modelsLoadedError) {
+    if (isClient && authCheckCompleted && employeeDetails && !modelsLoaded && !modelsLoading && !modelsLoadedError) {
       loadModels();
     }
-  }, [isClient, authCheckCompleted, loggedInUserPhone, modelsLoaded, modelsLoading, modelsLoadedError, toast]);
+  }, [isClient, authCheckCompleted, employeeDetails, modelsLoaded, modelsLoading, modelsLoadedError, toast]);
 
 
   // 4. Get Camera Permission
   useEffect(() => {
-    if (!isClient || !authCheckCompleted || !loggedInUserPhone || !modelsLoaded) return;
+    if (!isClient || !authCheckCompleted || !employeeDetails || !modelsLoaded) return;
 
     const getCameraPermission = async () => {
       setStatusMessage("Requesting camera access...");
+      setProgress(70);
       console.log("AttendancePage: Requesting camera permission.");
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
-          // Ensure video plays on all browsers
           videoRef.current.onloadedmetadata = () => {
              videoRef.current?.play().catch(playError => {
                 console.error("Error playing video stream:", playError);
+                setStatusMessage("Error: Could not start camera video.");
                 toast({title: "Camera Error", description: "Could not start camera video.", variant: "destructive"});
              });
           };
         }
         setHasCameraPermission(true);
-        setStatusMessage("Camera access granted. Position your face in the frame.");
+        setStatusMessage("Camera access granted.");
         console.log("AttendancePage: Camera permission granted.");
+        setProgress(80);
       } catch (error) {
         console.error('AttendancePage: Error accessing camera:', error);
         setHasCameraPermission(false);
@@ -187,25 +196,26 @@ const AttendancePage: NextPage = () => {
       }
     };
     getCameraPermission();
-  }, [isClient, authCheckCompleted, loggedInUserPhone, modelsLoaded, toast]);
-
+  }, [isClient, authCheckCompleted, employeeDetails, modelsLoaded, toast]);
 
   // 5. Get Location and Address
   const fetchLocationAndAddress = useCallback(async () => {
-    if (!isClient || !authCheckCompleted || !loggedInUserPhone) return;
+    if (!isClient || !authCheckCompleted || !employeeDetails) {
+      console.log("fetchLocationAndAddress skipped, conditions not met.");
+      return;
+    }
     
     console.log("AttendancePage: Attempting to fetch location and address.");
     setStatusMessage("Getting your current location...");
     setLocationError(null);
-    setIsLoading(true); // Start loading indication for location
-    setProgress(30);
+    setProgress(85);
 
     try {
       const coords = await getCurrentPosition();
       setLocation({ latitude: coords.latitude, longitude: coords.longitude });
       console.log("AttendancePage: Coordinates fetched:", coords.latitude, coords.longitude);
       setStatusMessage("Location acquired. Fetching address...");
-      setProgress(60);
+      setProgress(90);
 
       const addr = await getAddressFromCoordinates(coords.latitude, coords.longitude);
       setAddress(addr);
@@ -216,46 +226,48 @@ const AttendancePage: NextPage = () => {
       console.error('AttendancePage: Error fetching location or address:', error);
       let userFriendlyMessage = 'Could not get location or address. Please ensure GPS and network are active, and permissions are granted.';
       if (error instanceof GeolocationError) {
-        userFriendlyMessage = error.message; // Use the specific message from GeolocationError
+        userFriendlyMessage = error.message;
       }
       setLocationError(userFriendlyMessage);
       setStatusMessage(`Error: ${userFriendlyMessage}`);
       toast({ title: 'Location Error', description: userFriendlyMessage, variant: 'destructive' });
-      setProgress(0);
+      setProgress(0); // Reset progress on error
     } finally {
-        setIsLoading(false); // End loading indication for location
+      setIsLoading(false); // This indicates all initial setup (including location) is done or failed
     }
-  }, [isClient, authCheckCompleted, loggedInUserPhone, toast]);
+  }, [isClient, authCheckCompleted, employeeDetails, toast]);
 
   useEffect(() => {
-    if (isClient && authCheckCompleted && loggedInUserPhone && hasCameraPermission === true) { // Only fetch if camera is ready
+    // Fetch location only after camera is ready and other details are present
+    if (isClient && authCheckCompleted && employeeDetails && hasCameraPermission === true && modelsLoaded) {
         fetchLocationAndAddress();
     }
-  }, [isClient, authCheckCompleted, loggedInUserPhone, hasCameraPermission, fetchLocationAndAddress]);
+  }, [isClient, authCheckCompleted, employeeDetails, hasCameraPermission, modelsLoaded, fetchLocationAndAddress]);
 
 
   // Function to capture image and mark attendance
   const captureAndMarkAttendance = useCallback(async (method: 'auto' | 'manual') => {
     if (!videoRef.current || !canvasRef.current || !location || !address || !employeeDetails || isProcessing || captureCooldownActive) {
       let missingInfo = [];
-      if (!videoRef.current) missingInfo.push("video feed");
-      if (!location) missingInfo.push("location");
-      if (!address) missingInfo.push("address");
-      if (!employeeDetails) missingInfo.push("employee details");
-      if (isProcessing) missingInfo.push("another process running");
-      if (captureCooldownActive) missingInfo.push("cooldown active");
+      if (!videoRef.current?.srcObject) missingInfo.push("video feed active");
+      if (!location) missingInfo.push("location data");
+      if (!address) missingInfo.push("address data");
+      if (!employeeDetails) missingInfo.push("employee details loaded");
+      if (isProcessing) missingInfo.push("another process already running");
+      if (captureCooldownActive) missingInfo.push("cooldown period active");
       
-      console.warn(`Attendance capture skipped. Method: ${method}. Missing: ${missingInfo.join(', ')}`);
-      if (method === 'manual' && !captureCooldownActive) { // Only toast for manual if not on cooldown
-        toast({ title: 'Cannot Mark Attendance', description: `Information missing: ${missingInfo.join(', ')}. Please wait or refresh.`, variant: 'warning' });
+      const message = `Cannot Mark Attendance. Missing or waiting for: ${missingInfo.join(', ') || 'required information'}.`;
+      console.warn(`Attendance capture skipped. Method: ${method}. ${message}`);
+      if (method === 'manual' && !captureCooldownActive) {
+        toast({ title: 'Cannot Mark Attendance', description: message, variant: 'warning' });
       }
       return;
     }
 
     setIsProcessing(true);
-    setCaptureCooldownActive(true); // Activate cooldown
+    setCaptureCooldownActive(true);
     setStatusMessage(`Capturing attendance (${method})...`);
-    setProgress(50);
+    setProgress(50); // Mid-progress for capture
     console.log(`AttendancePage: Capturing attendance via ${method} method.`);
 
     const video = videoRef.current;
@@ -263,7 +275,14 @@ const AttendancePage: NextPage = () => {
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     const context = canvas.getContext('2d');
-    context?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    if (!context) {
+        console.error("Failed to get canvas context");
+        toast({title: "Capture Error", description: "Failed to initialize image capture.", variant: "destructive"});
+        setIsProcessing(false);
+        setCaptureCooldownActive(false);
+        return;
+    }
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
     const photoDataUri = canvas.toDataURL('image/jpeg');
 
     const attendanceData = {
@@ -287,20 +306,13 @@ const AttendancePage: NextPage = () => {
       toast({ title: 'Attendance Marked', description: `Successfully marked for ${employeeDetails.name}.`, variant: 'default' });
       console.log("AttendancePage: Attendance saved successfully.", attendanceData);
 
-      // Optional: Redirect or show success message then logout/clear state
-      // setTimeout(() => {
-      //   logoutUser();
-      //   router.replace('/login');
-      // }, 3000); // Example: logout after 3 seconds
-
-    } catch (error) {
+    } catch (error: any) {
       console.error('AttendancePage: Error saving attendance:', error);
-      setStatusMessage('Error: Could not save attendance.');
+      setStatusMessage(`Error: Could not save attendance. ${error.message || ''}`);
       setProgress(0);
-      toast({ title: 'Attendance Error', description: 'Failed to save attendance. Please try again.', variant: 'destructive' });
+      toast({ title: 'Attendance Error', description: `Failed to save attendance. ${error.message || 'Please try again.'}`, variant: 'destructive' });
     } finally {
       setIsProcessing(false);
-      // Cooldown: Prevent immediate re-capture for a few seconds
       setTimeout(() => setCaptureCooldownActive(false), 5000); // 5 second cooldown
     }
   }, [location, address, employeeDetails, toast, isProcessing, captureCooldownActive]);
@@ -308,7 +320,7 @@ const AttendancePage: NextPage = () => {
 
   // Face Detection Logic for Auto-Capture
   useEffect(() => {
-    if (!isClient || !modelsLoaded || !hasCameraPermission || !videoRef.current || isLoading || locationError) {
+    if (!isClient || !modelsLoaded || hasCameraPermission !== true || !videoRef.current || isLoading || !!locationError ) {
       if (faceDetectionIntervalRef.current) {
         clearInterval(faceDetectionIntervalRef.current);
         faceDetectionIntervalRef.current = null;
@@ -324,27 +336,27 @@ const AttendancePage: NextPage = () => {
     const video = videoRef.current;
     const startFaceDetection = () => {
       faceDetectionIntervalRef.current = setInterval(async () => {
-        if (video && video.readyState === 4 && !isProcessing && !captureCooldownActive) { // video.HAVE_ENOUGH_DATA is 4
-          const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions())
+        if (video && video.readyState === 4 && !isProcessing && !captureCooldownActive) {
+          const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions({scoreThreshold: 0.5}))
             .withFaceLandmarks()
             .withFaceExpressions();
 
           if (detections && detections.length > 0) {
-            const faceCenterConfidence = detections[0]?.detection.score; // Example metric
-            const isSmiling = detections[0]?.expressions.happy > 0.6; // Example: require smile
+            const mainFace = detections[0];
+            const faceConfidence = mainFace.detection.score;
+            const isSmiling = mainFace.expressions.happy > 0.6;
             
-            if (faceCenterConfidence > 0.7 && isSmiling) { // Adjust thresholds as needed
+            if (faceConfidence > 0.75 && isSmiling) { // Stricter confidence
                 setIsFaceDetected(true);
-                setStatusMessage("Face detected clearly! Preparing for auto-capture...");
-
-                if (!autoCaptureTimeoutRef.current) { // Start countdown if not already started
+                if (!autoCaptureTimeoutRef.current) {
+                    setStatusMessage("Face detected clearly! Auto-capturing in 2s...");
                     autoCaptureTimeoutRef.current = setTimeout(() => {
-                        if (isFaceDetected && !isProcessing && !captureCooldownActive && location && address) { // Re-check conditions
+                        if (isFaceDetected && !isProcessing && !captureCooldownActive && location && address) {
                            console.log("AttendancePage: Auto-capturing attendance now.");
                            captureAndMarkAttendance('auto');
                         }
-                        autoCaptureTimeoutRef.current = null; // Reset timeout ref
-                    }, 2000); // 2-second delay after stable detection
+                        autoCaptureTimeoutRef.current = null;
+                    }, 2000);
                 }
             } else {
                 setIsFaceDetected(false);
@@ -352,8 +364,7 @@ const AttendancePage: NextPage = () => {
                     clearTimeout(autoCaptureTimeoutRef.current);
                     autoCaptureTimeoutRef.current = null;
                 }
-                // Optional: update status message if face not clear enough
-                // setStatusMessage("Please look directly at the camera and smile.");
+                setStatusMessage("Position your face in the center and smile for auto-capture.");
             }
           } else {
             setIsFaceDetected(false);
@@ -361,20 +372,20 @@ const AttendancePage: NextPage = () => {
                 clearTimeout(autoCaptureTimeoutRef.current);
                 autoCaptureTimeoutRef.current = null;
             }
+             setStatusMessage("No face detected. Ensure good lighting and clear view.");
           }
         }
-      }, 700); // Detect every 700ms
+      }, 700);
     };
 
-    startFaceDetection();
+    if (videoRef.current.srcObject) { // Ensure stream is active
+        startFaceDetection();
+    }
+
 
     return () => {
-      if (faceDetectionIntervalRef.current) {
-        clearInterval(faceDetectionIntervalRef.current);
-      }
-      if (autoCaptureTimeoutRef.current) {
-        clearTimeout(autoCaptureTimeoutRef.current);
-      }
+      if (faceDetectionIntervalRef.current) clearInterval(faceDetectionIntervalRef.current);
+      if (autoCaptureTimeoutRef.current) clearTimeout(autoCaptureTimeoutRef.current);
     };
   }, [isClient, modelsLoaded, hasCameraPermission, isLoading, locationError, captureAndMarkAttendance, isProcessing, captureCooldownActive, location, address]);
 
@@ -386,10 +397,10 @@ const AttendancePage: NextPage = () => {
         return;
     }
     if (!location || !address) {
-        toast({title: "Location Missing", description: "Location data is not yet available. Please wait or refresh.", variant: "warning"});
+        toast({title: "Location Missing", description: "Location data is not yet available. Please wait or try refreshing location.", variant: "warning"});
         return;
     }
-    if (!hasCameraPermission || !videoRef.current?.srcObject) {
+    if (hasCameraPermission !== true || !videoRef.current?.srcObject) {
         toast({title: "Camera Issue", description: "Camera not ready or permission denied.", variant: "warning"});
         return;
     }
@@ -406,42 +417,36 @@ const AttendancePage: NextPage = () => {
     router.replace('/login');
   };
 
+  const handleRefreshLocation = () => {
+    if (isLoading) return; // Prevent multiple calls if already fetching
+    setIsLoading(true); // Set loading true for location refresh
+    fetchLocationAndAddress();
+  };
 
-  // Render Logic
-  if (!isClient || !authCheckCompleted || (authCheckCompleted && !loggedInUserPhone)) {
-    // Initial loading or redirecting state
+
+  // Initial Loading State (covering auth, employee details, models, camera, location)
+  if (!isClient || !authCheckCompleted || isLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-100 to-gray-300 dark:from-gray-800 dark:to-gray-900 p-4">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
         <p className="text-lg text-muted-foreground">{statusMessage}</p>
-      </div>
-    );
-  }
-
-  if (modelsLoadedError) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen p-4 text-center bg-destructive/10 dark:bg-destructive/20">
-        <AlertTriangle className="w-16 h-16 text-destructive mb-4" />
-        <h1 className="text-2xl font-bold text-destructive mb-2">An Error Occurred</h1>
-        <p className="text-foreground dark:text-destructive-foreground/80">{statusMessage}</p>
-        <Button onClick={() => window.location.reload()} className="mt-6">
-          <RefreshCw className="mr-2 h-4 w-4" /> Refresh Page
-        </Button>
+        {(isLoading || modelsLoading) && <Progress value={progress} className="w-1/2 mt-4 h-2.5 rounded-full" />}
+        {modelsLoadedError && (
+             <Alert variant="destructive" className="mt-4 max-w-md">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Model Loading Failed</AlertTitle>
+                <AlertDescription>
+                  {statusMessage} Check console for details.
+                  <Button onClick={() => window.location.reload()} className="mt-2 w-full" size="sm">
+                    <RefreshCw className="mr-2 h-3 w-3" /> Refresh Page
+                  </Button>
+                </AlertDescription>
+            </Alert>
+        )}
       </div>
     );
   }
   
-  if (isLoading && (!location || !address)) {
-     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-100 to-gray-300 dark:from-gray-800 dark:to-gray-900 p-4">
-        <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-        <p className="text-lg text-muted-foreground">{statusMessage}</p>
-        {modelsLoading && <p className="text-sm text-muted-foreground mt-2">Loading face models...</p>}
-        <Progress value={progress} className="w-1/2 mt-4" />
-      </div>
-    );
-  }
-
 
   return (
     <div className="relative flex flex-col items-center justify-start min-h-screen bg-gradient-to-br from-slate-100 via-gray-100 to-stone-200 dark:from-slate-800 dark:via-gray-900 dark:to-neutral-900 p-4 pt-8 md:pt-12 overflow-hidden">
@@ -459,7 +464,7 @@ const AttendancePage: NextPage = () => {
         <div className="flex items-center gap-2">
             <div className="p-2 bg-primary/10 rounded-full">
              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-primary">
-               <path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.035-.84-1.875-1.875-1.875h-.75ZM9.75 8.625c0-1.035.84-1.875 1.875-1.875h.75c1.035 0 1.875.84 1.875 1.875V21.75c0 1.035-.84 1.875-1.875 1.875h-.75c-1.035 0-1.875-.84-1.875-1.875V8.625ZM3 13.125c0-1.035.84-1.875 1.875-1.875h.75c1.035 0 1.875.84 1.875 1.875V21.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 0 1 3 21.75V13.125Z" />
+               <path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.035-.84-1.875-1.875-1.875h-.75ZM9.75 8.625c0-1.035.84-1.875 1.875-1.875h.75c1.035 0 1.875.84 1.875 1.875V21.75c0 1.035-.84 1.875 1.875 1.875h-.75c-1.035 0-1.875-.84-1.875-1.875V8.625ZM3 13.125c0-1.035.84-1.875 1.875-1.875h.75c1.035 0 1.875.84 1.875 1.875V21.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 0 1 3 21.75V13.125Z" />
              </svg>
             </div>
             <div>
@@ -473,7 +478,6 @@ const AttendancePage: NextPage = () => {
       </header>
 
       <main className="relative z-10 w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-        {/* Camera Feed Section */}
         <Card className="shadow-xl col-span-1 bg-card/80 backdrop-blur-sm dark:bg-card/70">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-xl">
@@ -482,36 +486,40 @@ const AttendancePage: NextPage = () => {
             <CardDescription>
               {hasCameraPermission === null && "Initializing camera..."}
               {hasCameraPermission === false && "Camera access denied. Please grant permission."}
-              {hasCameraPermission && !modelsLoaded && "Loading face models..."}
-              {hasCameraPermission && modelsLoaded && "Position your face in the center."}
+              {hasCameraPermission && !modelsLoaded && modelsLoading && "Loading face models..."}
+              {hasCameraPermission && modelsLoaded && "Position your face in the center and smile."}
+              {hasCameraPermission && modelsLoadedError && "Error loading face models. Refresh."}
             </CardDescription>
           </CardHeader>
-          <CardContent className="relative aspect-[4/3] overflow-hidden rounded-b-lg">
+          <CardContent className="relative aspect-[4/3] overflow-hidden rounded-b-lg bg-muted dark:bg-muted/30">
             <video
               ref={videoRef}
               className="absolute top-0 left-0 w-full h-full object-cover rounded-b-lg"
               autoPlay
               playsInline
               muted
-              onPlay={() => console.log("Video playing")}
-              onError={(e) => console.error("Video error:", e)}
             />
             <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full object-cover hidden" />
             {hasCameraPermission === false && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 text-white p-4 rounded-b-lg">
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-white p-4 rounded-b-lg text-center">
                 <XCircle className="w-12 h-12 mb-2 text-destructive" />
-                <p className="text-center">Camera permission denied. Please enable it in your browser settings and refresh.</p>
+                <p>Camera permission denied. Please enable it in your browser settings and refresh.</p>
               </div>
             )}
-             {hasCameraPermission && videoRef.current?.srcObject && ( // Show detection status only if camera is active
-                <div className={`absolute bottom-2 right-2 px-2 py-1 rounded text-xs ${isFaceDetected ? 'bg-green-500/80 text-white' : 'bg-red-500/80 text-white'}`}>
-                    {isFaceDetected ? 'Face Detected' : 'No Face'}
+             {hasCameraPermission === true && modelsLoaded && videoRef.current?.srcObject && (
+                <div className={`absolute bottom-2 right-2 px-2 py-1 rounded text-xs font-medium ${isFaceDetected ? 'bg-green-500/90 text-white' : 'bg-red-500/90 text-white'}`}>
+                    {isFaceDetected ? 'Face Clear' : 'Face Not Clear'}
+                </div>
+             )}
+             {hasCameraPermission === true && !modelsLoaded && modelsLoading && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 text-white p-4 rounded-b-lg">
+                    <Loader2 className="w-8 h-8 animate-spin mb-2" />
+                    <p>Loading models...</p>
                 </div>
              )}
           </CardContent>
         </Card>
 
-        {/* Employee and Location Details Section */}
         <Card className="shadow-xl col-span-1 bg-card/80 backdrop-blur-sm dark:bg-card/70">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-xl">
@@ -537,50 +545,56 @@ const AttendancePage: NextPage = () => {
               </div>
             )}
             <hr className="my-3 border-border/50"/>
-            <div className="flex items-center gap-2 font-semibold text-primary">
-                <MapPin size={18} /> Current Location:
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 font-semibold text-primary">
+                    <MapPin size={18} /> Current Location:
+                </div>
+                <Button variant="outline" size="sm" onClick={handleRefreshLocation} disabled={isLoading && location === null}>
+                    <RefreshCw className={`h-3 w-3 ${isLoading && location === null ? 'animate-spin' : ''}`} />
+                </Button>
             </div>
-            {isLoading && !location && <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Fetching location...</div>}
-            {locationError && <Alert variant="destructive" className="text-xs"><AlertTriangle className="h-4 w-4" /><AlertTitle>Location Error</AlertTitle><AlertDescription>{locationError}</AlertDescription></Alert>}
+            {isLoading && location === null && <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Fetching location...</div>}
+            {locationError && <Alert variant="destructive" className="text-xs mt-2"><AlertTriangle className="h-4 w-4" /><AlertTitle>Location Error</AlertTitle><AlertDescription>{locationError}</AlertDescription></Alert>}
             {location && (
               <p className="text-muted-foreground">
                 Lat: {location.latitude.toFixed(5)}, Lon: {location.longitude.toFixed(5)}
               </p>
             )}
-            {address && <p className="text-muted-foreground text-xs">{address}</p>}
+            {address ? <p className="text-muted-foreground text-xs">{address}</p> : location && <p className="text-muted-foreground text-xs">Fetching address...</p>}
           </CardContent>
         </Card>
         
-        {/* Status and Action Section */}
         <Card className="md:col-span-2 shadow-xl bg-card/80 backdrop-blur-sm dark:bg-card/70">
             <CardContent className="p-4 space-y-3">
-                 <div className="flex items-center justify-center text-center text-sm min-h-[40px]">
+                 <div className="flex items-center justify-center text-center text-sm min-h-[40px] p-2 rounded-md bg-muted/50 dark:bg-muted/30">
                     {isProcessing ? <Loader2 className="h-5 w-5 animate-spin mr-2 text-primary" /> : 
                      statusMessage.includes("Error:") ? <AlertTriangle className="h-5 w-5 mr-2 text-destructive" /> :
-                     statusMessage.includes("success") ? <CheckCircle className="h-5 w-5 mr-2 text-green-500" /> : null}
-                    <span className={`${statusMessage.includes("Error:") ? 'text-destructive' : statusMessage.includes("success") ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+                     statusMessage.includes("success") || statusMessage.includes("Location and address ready") || statusMessage.includes("Face recognition models loaded") ? <CheckCircle className="h-5 w-5 mr-2 text-green-500" /> :
+                     <Loader2 className="h-5 w-5 animate-spin mr-2 text-primary" />} {/* Default to loader if no other icon fits */}
+                    <span className={`${statusMessage.includes("Error:") ? 'text-destructive' : (statusMessage.includes("success") || statusMessage.includes("Location and address ready") || statusMessage.includes("Face recognition models loaded")) ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
                         {statusMessage}
                     </span>
                 </div>
-                {(isLoading || modelsLoading || isProcessing) && <Progress value={progress} className="w-full h-2" />}
+                {(isProcessing || (isLoading && progress < 100)) && <Progress value={progress} className="w-full h-2" />}
 
                  <Button 
                     onClick={handleManualCapture} 
                     className="w-full py-3 text-base font-semibold"
-                    disabled={isLoading || isProcessing || !modelsLoaded || !hasCameraPermission || !!locationError || captureCooldownActive || !location || !address}
+                    disabled={isProcessing || captureCooldownActive || !modelsLoaded || hasCameraPermission !== true || !!locationError || !location || !address || modelsLoadedError}
                     aria-label="Mark Attendance Manually"
                   >
-                  {isProcessing && captureCooldownActive ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Camera className="mr-2 h-5 w-5" />}
-                  {isProcessing && captureCooldownActive ? 'Processing...' : captureCooldownActive ? 'Cooldown Active' : 'Mark Attendance Manually'}
+                  {isProcessing ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Camera className="mr-2 h-5 w-5" />}
+                  {isProcessing ? 'Processing...' : captureCooldownActive ? 'Cooldown...' : 'Mark Manually'}
                 </Button>
-                <p className="text-xs text-center text-muted-foreground/70">
-                    {captureCooldownActive ? "Please wait before trying again." : (modelsLoaded && hasCameraPermission && location && address && !isLoading ? "Auto-capture active when face is clear and smiling." : "Ensure camera, location, and models are ready.")}
+                <p className="text-xs text-center text-muted-foreground/80">
+                    {captureCooldownActive ? "Please wait before trying again." : 
+                     (modelsLoaded && hasCameraPermission === true && location && address && !isLoading && !isProcessing && !modelsLoadedError) ? "Auto-capture active if face is clear and smiling." : 
+                     "Ensure camera, location & models are ready for attendance."}
                 </p>
+                {modelsLoadedError && <p className="text-xs text-center text-destructive">Face models failed to load. Manual capture might not work. Please refresh.</p>}
             </CardContent>
         </Card>
-
       </main>
-      <canvas ref={canvasRef} className="hidden"></canvas>
     </div>
   );
 };
