@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
-import { ThemeProvider } from '@/components/theme-provider';
+import { ThemeProvider } from '@/components/theme-provider'; // Corrected import path if needed, ensure file exists
 import { Toaster } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
 import { ToastProvider } from '@/hooks/use-toast';
@@ -26,7 +26,6 @@ export default function RootLayout({
         {/* Basic Meta Tags - title and description are handled by the `metadata` export */}
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-
         {/* PWA Meta Tags */}
         <meta name="application-name" content="FieldTrack" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -37,26 +36,17 @@ export default function RootLayout({
         <meta name="msapplication-config" content="/icons/browserconfig.xml" />
         <meta name="msapplication-TileColor" content="#2B5797" />
         <meta name="msapplication-tap-highlight" content="no" />
-        <meta name="theme-color" content="#000000" /> {/* Ensure this matches globals.css if applicable */}
-
+        <meta name="theme-color" content="#000000" />
         {/* Link Tags */}
         <link rel="apple-touch-icon" href="/icons/touch-icon-iphone.png" />
         <link rel="apple-touch-icon" sizes="152x152" href="/icons/touch-icon-ipad.png" />
         <link rel="apple-touch-icon" sizes="180x180" href="/icons/touch-icon-iphone-retina.png" />
         <link rel="apple-touch-icon" sizes="167x167" href="/icons/touch-icon-ipad-retina.png" />
-
         <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
         <link rel="manifest" href="/manifest.json" />
         <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#5bbad5" />
         <link rel="shortcut icon" href="/favicon.ico" />
-
-        {/* Add to home screen for Safari on iOS - these are duplicates if already set, can be removed if so */}
-        {/* <meta name="apple-mobile-web-app-capable" content="yes" /> */}
-        {/* <meta name="apple-mobile-web-app-status-bar-style" content="default" /> */}
-
-        {/* Older Android/Chrome versions might need this - also potentially duplicate */}
-        {/* <meta name="mobile-web-app-capable" content="yes" /> */}
       </head>
       <body
         className={cn(

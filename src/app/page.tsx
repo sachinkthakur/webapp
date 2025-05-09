@@ -73,7 +73,7 @@ const AttendancePage: NextPage = () => {
     } finally {
         setIsLoading(false); // Set loading to false after fetch attempt
     }
-  }, [router, toast, isClient]); // Removed fetchLocationAndAddress from deps to avoid cycle, called internally
+  }, [router, toast, isClient, fetchLocationAndAddress]);
 
 
   useEffect(() => {
@@ -210,7 +210,7 @@ const AttendancePage: NextPage = () => {
 
 
    const capturePhoto = useCallback((): string | null => {
-       if (videoRef.current && videoRef.current.readyState >= videoRef.current.HAVE_ENOUGH_DATA) { 
+       if (videoRef.current && videoRef.current.readyState >= videoRef.current.HAVE_ENOUGH_DATA) {
            const tempCanvas = document.createElement('canvas');
            tempCanvas.width = videoRef.current.videoWidth;
            tempCanvas.height = videoRef.current.videoHeight;
@@ -219,7 +219,7 @@ const AttendancePage: NextPage = () => {
                context.translate(tempCanvas.width, 0);
                context.scale(-1, 1);
                context.drawImage(videoRef.current, 0, 0, tempCanvas.width, tempCanvas.height);
-               const dataUri = tempCanvas.toDataURL('image/jpeg', 0.9); 
+               const dataUri = tempCanvas.toDataURL('image/jpeg', 0.9);
                return dataUri;
            }
        }
@@ -231,11 +231,11 @@ const AttendancePage: NextPage = () => {
    const submitAttendance = useCallback(async (photoDataUri: string, captureMethod: 'auto' | 'manual') => {
        if (!employee || !location || !address) {
            toast({ title: 'Missing Information', description: 'Cannot submit attendance without employee details, location, or address.', variant: 'destructive' });
-           setIsCapturing(false); 
+           setIsCapturing(false);
            return;
        }
 
-       setIsCapturing(true); 
+       setIsCapturing(true);
        setStatusMessage("Submitting attendance...");
        setProgress(90);
 
@@ -254,21 +254,21 @@ const AttendancePage: NextPage = () => {
         };
 
        try {
-           await saveAttendance(attendanceData); 
+           await saveAttendance(attendanceData);
 
-           toast({ 
+           toast({
                title: 'Attendance Marked Successfully!',
                description: `Time: ${attendanceData.timestamp.toLocaleTimeString()}, Location: ${attendanceData.address}`,
            });
             setStatusMessage("Attendance marked successfully!");
             setProgress(100);
 
-            setCaptureCooldownActive(true); 
+            setCaptureCooldownActive(true);
 
             setTimeout(() => {
                  setCaptureCooldownActive(false);
                  setStatusMessage("Ready for next detection or manual capture.");
-                 setDetectionStatus('idle'); 
+                 setDetectionStatus('idle');
                  setProgress(0);
             }, CAPTURE_COOLDOWN);
 
@@ -277,16 +277,16 @@ const AttendancePage: NextPage = () => {
            let errMsg = "Could not save attendance record. Please try again.";
            if (err instanceof Error) errMsg = err.message;
            toast({ title: 'Submission Failed', description: errMsg, variant: 'destructive' });
-           setError("Failed to save attendance."); 
+           setError("Failed to save attendance.");
            setStatusMessage("Submission failed. Please try again.");
            setProgress(0);
        } finally {
-           setIsCapturing(false); 
+           setIsCapturing(false);
        }
    }, [employee, location, address, toast]);
 
     const handleAutoCapture = useCallback(async () => {
-        if (isCapturing || captureCooldownActive || !isVideoStreaming) { 
+        if (isCapturing || captureCooldownActive || !isVideoStreaming) {
             console.log("Auto-capture skipped:", {isCapturing, captureCooldownActive, isVideoStreaming});
             return;
         }
@@ -297,7 +297,7 @@ const AttendancePage: NextPage = () => {
             await submitAttendance(photo, 'auto');
         } else {
              console.error("Auto-capture failed: Could not get photo data.");
-             setStatusMessage("Auto-capture failed. Photo could not be taken."); 
+             setStatusMessage("Auto-capture failed. Photo could not be taken.");
         }
     }, [isCapturing, captureCooldownActive, isVideoStreaming, capturePhoto, submitAttendance]);
 
@@ -311,13 +311,13 @@ const AttendancePage: NextPage = () => {
      setStatusMessage("Detecting face...");
      setDetectionStatus('detecting');
 
-    if (intervalRef.current) { 
+    if (intervalRef.current) {
       clearInterval(intervalRef.current);
     }
 
     intervalRef.current = setInterval(async () => {
-      if (videoRef.current && videoRef.current.videoWidth > 0 && canvasRef.current && !isCapturing && !captureCooldownActive) { 
-        canvasRef.current.innerHTML = ""; 
+      if (videoRef.current && videoRef.current.videoWidth > 0 && canvasRef.current && !isCapturing && !captureCooldownActive) {
+        canvasRef.current.innerHTML = "";
         const displaySize = {
           width: videoRef.current.videoWidth,
           height: videoRef.current.videoHeight,
@@ -325,28 +325,28 @@ const AttendancePage: NextPage = () => {
         faceapi.matchDimensions(canvasRef.current, displaySize);
 
         const detections = await faceapi
-          .detectAllFaces(videoRef.current, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.5 })) 
-          .withFaceLandmarks() 
+          .detectAllFaces(videoRef.current, new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.5 }))
+          .withFaceLandmarks()
 
         const resizedDetections = faceapi.resizeResults(detections, displaySize);
 
         if (resizedDetections.length > 0) {
-            if (detectionStatus !== 'detected') { 
+            if (detectionStatus !== 'detected') {
                 setStatusMessage("Face detected. Hold still.");
                 setDetectionStatus('detected');
             }
-            const { detection } = resizedDetections[0]; 
+            const { detection } = resizedDetections[0];
             const box = detection.box;
             const centerX = box.x + box.width / 2;
             const videoCenterX = displaySize.width / 2;
             const sizeRatio = Math.min(box.width / displaySize.width, box.height / displaySize.height);
 
-            const isCentered = Math.abs(centerX - videoCenterX) < displaySize.width * 0.25; 
-            const isLargeEnough = sizeRatio > 0.20; 
+            const isCentered = Math.abs(centerX - videoCenterX) < displaySize.width * 0.25;
+            const isLargeEnough = sizeRatio > 0.20;
 
            if (isCentered && isLargeEnough) {
                 setStatusMessage("Face aligned. Capturing...");
-                await handleAutoCapture(); 
+                await handleAutoCapture();
             } else if (!isLargeEnough) {
                  setStatusMessage("Please move closer to the camera.");
             } else if (!isCentered) {
@@ -354,24 +354,24 @@ const AttendancePage: NextPage = () => {
             }
 
 
-        } else { 
-             if (detectionStatus !== 'no_face') { 
+        } else {
+             if (detectionStatus !== 'no_face') {
                  setStatusMessage("No face detected. Position your face clearly.");
                  setDetectionStatus('no_face');
              }
         }
       }
-    }, FACE_DETECTION_INTERVAL); 
+    }, FACE_DETECTION_INTERVAL);
 
      return () => {
        if (intervalRef.current) {
          clearInterval(intervalRef.current);
-         intervalRef.current = null; 
+         intervalRef.current = null;
          console.log("Face detection interval cleared due to handleVideoPlay re-creation or unmount.");
        }
      };
 
-  }, [isClient, modelsLoaded, isCapturing, captureCooldownActive, detectionStatus, handleAutoCapture]); 
+  }, [isClient, modelsLoaded, isCapturing, captureCooldownActive, detectionStatus, handleAutoCapture]);
 
 
     const handleManualCapture = useCallback(async () => {
@@ -392,7 +392,7 @@ const AttendancePage: NextPage = () => {
         } else {
             console.error("Manual capture failed: Could not get photo data.");
             toast({ title: 'Capture Failed', description: 'Could not capture photo from camera. Ensure camera is active.', variant: 'destructive' });
-             setStatusMessage("Manual capture failed."); 
+             setStatusMessage("Manual capture failed.");
         }
     }, [isCapturing, captureCooldownActive, isVideoStreaming, location, address, capturePhoto, submitAttendance, toast]);
 
@@ -403,7 +403,7 @@ const AttendancePage: NextPage = () => {
     router.replace('/login');
   }, [stopVideo, router, toast]);
 
-   if (isLoading || !isClient) { 
+   if (isLoading || !isClient) {
        return (
            <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-100 dark:from-gray-800 dark:via-gray-900 dark:to-black p-4">
                 <Loader2 className="h-16 w-16 animate-spin text-primary mb-4" />
@@ -435,8 +435,8 @@ const AttendancePage: NextPage = () => {
         data-ai-hint="background pattern"
         src="https://picsum.photos/seed/logisticspattern/1920/1080"
         alt="Background pattern"
-        layout="fill"
-        objectFit="cover"
+        fill
+        style={{objectFit:"cover"}}
         quality={50}
         className="absolute inset-0 z-0 opacity-10 dark:opacity-5"
       />
@@ -466,29 +466,29 @@ const AttendancePage: NextPage = () => {
               ref={videoRef}
               autoPlay
               muted
-              playsInline 
+              playsInline
               className={`w-full h-auto max-h-[60vh] rounded-md bg-black object-contain transform scale-x-[-1] shadow-inner transition-opacity duration-300 ${!isVideoStreaming ? 'opacity-0' : 'opacity-100'}`}
-              onPlay={handleVideoPlay} 
+              onPlay={handleVideoPlay}
               onError={(e) => {
                  console.error("Video error:", e);
                  setError("Camera feed error. Please refresh or check permissions.");
                  setStatusMessage("Camera error.");
               }}
-              width={640} 
+              width={640}
               height={480}
             />
-             <canvas 
+             <canvas
                ref={canvasRef}
-               className="absolute top-0 left-0 w-full h-full transform scale-x-[-1]" 
-               style={{ maxHeight: 'inherit', objectFit: 'contain' }} 
+               className="absolute top-0 left-0 w-full h-full transform scale-x-[-1]"
+               style={{ maxHeight: 'inherit', objectFit: 'contain' }}
              />
-             {!isVideoStreaming && !error && ( 
+             {!isVideoStreaming && !error && (
                <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/50 dark:bg-muted/30 rounded-md p-4 text-center">
                  <Loader2 className="h-12 w-12 animate-spin text-primary mb-3" />
                  <p className="text-muted-foreground text-sm">{statusMessage}</p>
                </div>
              )}
-             {error && error.includes("camera") && ( 
+             {error && error.includes("camera") && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-destructive/10 dark:bg-destructive/20 rounded-md p-4 text-center">
                     <AlertTriangle className="h-10 w-10 text-destructive mb-2"/>
                     <p className="text-destructive text-sm">{error}</p>
@@ -506,7 +506,7 @@ const AttendancePage: NextPage = () => {
                 </div>
                   <Button
                      onClick={handleManualCapture}
-                     disabled={isCapturing || captureCooldownActive || !isVideoStreaming || !location || !address || !!error} 
+                     disabled={isCapturing || captureCooldownActive || !isVideoStreaming || !location || !address || !!error}
                      size="sm"
                      className="shadow-md flex-shrink-0 px-3 py-1.5 sm:px-4 sm:py-2"
                      aria-label="Mark attendance manually"
@@ -515,7 +515,7 @@ const AttendancePage: NextPage = () => {
                      Manual
                   </Button>
              </div>
-             {(isCapturing || (isLoading && progress > 0 && progress < 100)) && ( 
+             {(isCapturing || (isLoading && progress > 0 && progress < 100)) && (
                <Progress value={isCapturing ? progress : (isLoading ? progress : 0)} className="w-full mt-2 h-1.5" />
              )}
           </CardFooter>
@@ -559,13 +559,13 @@ const AttendancePage: NextPage = () => {
                  </div>
               </>
             ) : (
-               !error && 
+               !error &&
                <div className="flex items-center justify-center h-full">
                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
                  <p className="ml-2 text-muted-foreground">Loading details...</p>
                </div>
             )}
-            {error && !employee && ( 
+            {error && !employee && (
                 <div className="flex flex-col items-center justify-center h-full text-center">
                     <AlertTriangle className="h-8 w-8 text-destructive mb-2"/>
                     <p className="text-destructive text-sm">{error}</p>
@@ -584,5 +584,3 @@ const AttendancePage: NextPage = () => {
 };
 
 export default AttendancePage;
-
-    
