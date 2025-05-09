@@ -8,7 +8,6 @@ import { useForm } from 'react-hook-form';
 import * as z from 'zod';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-// Label removed as FormLabel is used from Form component
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -25,9 +24,9 @@ const employeeSchema = z.object({
   employeeId: z.string().min(1, 'Employee ID is required'),
   name: z.string().min(1, 'Name is required'),
   phone: z.string()
-        .length(10, 'Phone number must be exactly 10 digits')
-        .regex(/^[6-9]\d{9}$/, 'Invalid Indian mobile number format (must be 10 digits, starting with 6-9)')
-        .trim(),
+    .length(10, 'Phone number must be exactly 10 digits')
+    .regex(/^[6-9]\d{9}$/, 'Invalid Indian mobile number format (must be 10 digits, starting with 6-9)')
+    .trim(),
   shiftTiming: z.string().min(1, 'Shift Timing is required (e.g., 9 AM - 5 PM)').trim(),
   workingLocation: z.string().min(1, 'Working Location is required').trim(),
 });
@@ -44,10 +43,53 @@ const EmployeeManagementPage: NextPage = () => {
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isClient, setIsClient] = useState(false);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+
 
   useEffect(() => {
-     setIsClient(true);
+    setIsClient(true);
   }, []);
+
+  const fetchEmployees = useCallback(async () => {
+    if (!isClient) return;
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      const fetchedEmployees = await getEmployees();
+      fetchedEmployees.sort((a, b) => a.name.localeCompare(b.name));
+      setEmployees(fetchedEmployees);
+    } catch (error: any) {
+      console.error('Failed to fetch employees:', error);
+      setError('Could not fetch employee list. Please try refreshing the page.');
+      toast({ title: 'Error', description: 'Could not fetch employees.', variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast, isClient]);
+
+  useEffect(() => {
+    if (isClient) {
+      const loggedInUser = checkLoginStatus();
+      console.log("Employee Management page: Auth check. LoggedInUser:", loggedInUser);
+      if (typeof loggedInUser === 'string' && loggedInUser.toLowerCase() === 'admin') {
+        setIsAdminAuthenticated(true);
+      } else {
+        setIsAdminAuthenticated(false);
+        toast({ title: 'Unauthorized', description: 'Redirecting to login...', variant: 'destructive' });
+        logoutUser();
+        router.replace('/login');
+      }
+    }
+  }, [isClient, router, toast]);
+
+  useEffect(() => {
+    if (isClient && isAdminAuthenticated) {
+      console.log("Employee Management page: Authenticated, fetching employees.");
+      fetchEmployees();
+    }
+  }, [isClient, isAdminAuthenticated, fetchEmployees]);
+
 
   const form = useForm<EmployeeFormValues>({
     resolver: zodResolver(employeeSchema),
@@ -60,40 +102,6 @@ const EmployeeManagementPage: NextPage = () => {
       id: undefined,
     },
   });
-
-  const fetchEmployees = useCallback(async () => {
-     if (!isClient) return;
-
-    setIsLoading(true);
-    setError(null);
-    try {
-      const fetchedEmployees = await getEmployees();
-       fetchedEmployees.sort((a, b) => a.name.localeCompare(b.name));
-      setEmployees(fetchedEmployees);
-    } catch (error: any) {
-      console.error('Failed to fetch employees:', error);
-      setError('Could not fetch employee list. Please try refreshing the page.');
-      toast({ title: 'Error', description: 'Could not fetch employees.', variant: 'destructive' });
-    } finally {
-      setIsLoading(false);
-    }
-  }, [toast, isClient]);
-
-   useEffect(() => {
-      if (isClient) {
-         const loggedInUser = checkLoginStatus();
-         // More robust check for admin authorization
-         if (typeof loggedInUser === 'string' && loggedInUser.toLowerCase() === 'admin') {
-           // User is admin, proceed to fetch employees
-           fetchEmployees();
-         } else {
-           // Not admin, or loggedInUser is null/not a string
-           toast({ title: 'Unauthorized', description: 'Redirecting to login...', variant: 'destructive' });
-           logoutUser();
-           router.replace('/login');
-         }
-      }
-   }, [router, toast, isClient, fetchEmployees]); // fetchEmployees added as it's called in the effect
 
 
   const handleOpenDialog = (employee: Employee | null = null) => {
@@ -136,18 +144,18 @@ const EmployeeManagementPage: NextPage = () => {
     try {
       if (editingEmployee && data.id) {
         const updatedData: Employee = {
-             ...data,
-             id: data.id,
-             employeeId: data.employeeId,
-             name: data.name,
-             phone: data.phone,
-             shiftTiming: data.shiftTiming,
-             workingLocation: data.workingLocation,
+          ...data,
+          id: data.id,
+          employeeId: data.employeeId,
+          name: data.name,
+          phone: data.phone,
+          shiftTiming: data.shiftTiming,
+          workingLocation: data.workingLocation,
         };
         await updateEmployee(updatedData);
         toast({ title: 'Success', description: 'Employee updated successfully.' });
       } else {
-         const { id, ...newData } = data;
+        const { id, ...newData } = data;
         await addEmployee(newData);
         toast({ title: 'Success', description: 'Employee added successfully.' });
       }
@@ -155,12 +163,12 @@ const EmployeeManagementPage: NextPage = () => {
       handleCloseDialog();
     } catch (error: any) {
       console.error('Failed to save employee:', error);
-       let errorMessage = 'Failed to save employee. Please try again.';
-       if (error instanceof Error) {
-         errorMessage = error.message;
-       }
-       setError(errorMessage);
-       toast({ title: 'Save Error', description: errorMessage, variant: 'destructive' });
+      let errorMessage = 'Failed to save employee. Please try again.';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+      setError(errorMessage);
+      toast({ title: 'Save Error', description: errorMessage, variant: 'destructive' });
     } finally {
       setIsSubmitting(false);
     }
@@ -173,18 +181,18 @@ const EmployeeManagementPage: NextPage = () => {
     setIsSubmitting(true);
     setError(null);
     try {
-       if (!employeeToDelete.id) {
-          throw new Error("Cannot delete employee: Internal ID is missing.");
-       }
-       await deleteEmployee(employeeToDelete.id);
-       toast({ title: 'Success', description: `Employee "${employeeToDelete.name}" deleted successfully.` });
-       await fetchEmployees();
+      if (!employeeToDelete.id) {
+        throw new Error("Cannot delete employee: Internal ID is missing.");
+      }
+      await deleteEmployee(employeeToDelete.id);
+      toast({ title: 'Success', description: `Employee "${employeeToDelete.name}" deleted successfully.` });
+      await fetchEmployees();
     } catch (error: any) {
-       console.error('Failed to delete employee:', error);
-       setError(`Could not delete employee: ${error.message || 'Unknown error'}`);
-       toast({ title: 'Deletion Error', description: `Could not delete employee: ${error.message || 'Unknown error'}`, variant: 'destructive' });
+      console.error('Failed to delete employee:', error);
+      setError(`Could not delete employee: ${error.message || 'Unknown error'}`);
+      toast({ title: 'Deletion Error', description: `Could not delete employee: ${error.message || 'Unknown error'}`, variant: 'destructive' });
     } finally {
-       setIsSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -198,33 +206,33 @@ const EmployeeManagementPage: NextPage = () => {
     router.replace('/login');
   }, [router, toast]);
 
-   if (!isClient) {
-       return (
-           <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-200 dark:from-gray-800 dark:via-gray-900 dark:to-black">
-                <Loader2 className="h-16 w-16 animate-spin text-primary" />
-           </div>
-       );
-   }
+  if (!isClient || (isClient && !isAdminAuthenticated && isLoading)) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-200 dark:from-gray-800 dark:via-gray-900 dark:to-black">
+        <Loader2 className="h-16 w-16 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex flex-col min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-100 dark:from-gray-800 dark:via-gray-900 dark:to-black p-4 md:p-8 overflow-hidden">
-       <Image
-         data-ai-hint="office background"
-         src="https://picsum.photos/seed/employeebg/1920/1080"
-         alt="Employee background"
-         layout="fill"
-         objectFit="cover"
-         quality={60}
-         className="absolute inset-0 z-0 opacity-10 dark:opacity-5"
-       />
+      <Image
+        data-ai-hint="office background"
+        src="https://picsum.photos/seed/employeebg/1920/1080"
+        alt="Employee background"
+        layout="fill"
+        objectFit="cover"
+        quality={60}
+        className="absolute inset-0 z-0 opacity-10 dark:opacity-5"
+      />
 
       <header className="relative z-10 mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
-         <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" onClick={goBack} aria-label="Go back to admin dashboard">
-                 <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <h1 className="text-2xl md:text-3xl font-bold text-primary">Manage Employees</h1>
-         </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="icon" onClick={goBack} aria-label="Go back to admin dashboard">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <h1 className="text-2xl md:text-3xl font-bold text-primary">Manage Employees</h1>
+        </div>
         <div className="flex gap-2 flex-wrap justify-center md:justify-end">
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
@@ -276,14 +284,14 @@ const EmployeeManagementPage: NextPage = () => {
                         <FormControl>
                           <Input type="tel" placeholder="e.g., 9876543210" {...field} disabled={isSubmitting} maxLength={10} />
                         </FormControl>
-                         <FormDescription>
-                            Enter 10-digit mobile number without country code. This will be their login ID.
-                         </FormDescription>
+                        <FormDescription>
+                          Enter 10-digit mobile number without country code. This will be their login ID.
+                        </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                   <FormField
+                  <FormField
                     control={form.control}
                     name="shiftTiming"
                     render={({ field }) => (
@@ -296,7 +304,7 @@ const EmployeeManagementPage: NextPage = () => {
                       </FormItem>
                     )}
                   />
-                   <FormField
+                  <FormField
                     control={form.control}
                     name="workingLocation"
                     render={({ field }) => (
@@ -310,18 +318,18 @@ const EmployeeManagementPage: NextPage = () => {
                     )}
                   />
                   {error && (
-                      <p className="text-sm text-destructive flex items-center gap-2">
-                         <AlertTriangle className="h-4 w-4 flex-shrink-0"/> {error}
-                      </p>
+                    <p className="text-sm text-destructive flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 flex-shrink-0" /> {error}
+                    </p>
                   )}
                   <DialogFooter className="mt-6">
                     <DialogClose asChild>
-                         <Button type="button" variant="outline" onClick={handleCloseDialog} disabled={isSubmitting}>
-                           Cancel
-                         </Button>
+                      <Button type="button" variant="outline" onClick={handleCloseDialog} disabled={isSubmitting}>
+                        Cancel
+                      </Button>
                     </DialogClose>
                     <Button type="submit" disabled={isSubmitting}>
-                       {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                       {editingEmployee ? 'Save Changes' : 'Add Employee'}
                     </Button>
                   </DialogFooter>
@@ -341,16 +349,16 @@ const EmployeeManagementPage: NextPage = () => {
           <CardDescription>List of all employees in the system. Click '+' to add, or use actions to edit/delete.</CardDescription>
         </CardHeader>
         <CardContent>
-           {error && !isDialogOpen && (
-                 <div className="mb-4 p-4 bg-destructive/10 border border-destructive/30 rounded-md flex items-center gap-3">
-                      <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0" />
-                      <p className="text-sm text-destructive">{error}</p>
-                 </div>
-            )}
-          {isLoading ? (
+          {error && !isDialogOpen && (
+            <div className="mb-4 p-4 bg-destructive/10 border border-destructive/30 rounded-md flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0" />
+              <p className="text-sm text-destructive">{error}</p>
+            </div>
+          )}
+          {isLoading && isAdminAuthenticated ? (
             <div className="flex flex-col justify-center items-center h-64 text-center">
-               <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-               <p className="text-muted-foreground">Loading employee list...</p>
+              <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+              <p className="text-muted-foreground">Loading employee list...</p>
             </div>
           ) : (
             <ScrollArea className="h-[60vh] rounded-md border">
@@ -363,8 +371,8 @@ const EmployeeManagementPage: NextPage = () => {
                     <TableHead className="whitespace-nowrap">Employee ID</TableHead>
                     <TableHead>Name</TableHead>
                     <TableHead className="whitespace-nowrap">Phone (Login ID)</TableHead>
-                     <TableHead className="whitespace-nowrap">Shift Timing</TableHead>
-                     <TableHead className="whitespace-nowrap">Working Location</TableHead>
+                    <TableHead className="whitespace-nowrap">Shift Timing</TableHead>
+                    <TableHead className="whitespace-nowrap">Working Location</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -375,26 +383,26 @@ const EmployeeManagementPage: NextPage = () => {
                         <TableCell className="font-medium whitespace-nowrap">{emp.employeeId}</TableCell>
                         <TableCell>{emp.name}</TableCell>
                         <TableCell className="whitespace-nowrap">{emp.phone}</TableCell>
-                         <TableCell className="whitespace-nowrap">{emp.shiftTiming}</TableCell>
-                         <TableCell className="whitespace-nowrap">{emp.workingLocation}</TableCell>
+                        <TableCell className="whitespace-nowrap">{emp.shiftTiming}</TableCell>
+                        <TableCell className="whitespace-nowrap">{emp.workingLocation}</TableCell>
                         <TableCell className="text-right">
-                           <div className="flex gap-2 justify-end">
-                               <Button variant="outline" size="icon" onClick={() => handleOpenDialog(emp)} aria-label={`Edit employee ${emp.name}`} disabled={isSubmitting}>
-                                 <Edit className="h-4 w-4" />
-                               </Button>
-                               <Button variant="destructive" size="icon" onClick={() => handleDelete(emp)} aria-label={`Delete employee ${emp.name}`} disabled={isSubmitting}>
-                                 <Trash2 className="h-4 w-4" />
-                               </Button>
-                           </div>
+                          <div className="flex gap-2 justify-end">
+                            <Button variant="outline" size="icon" onClick={() => handleOpenDialog(emp)} aria-label={`Edit employee ${emp.name}`} disabled={isSubmitting}>
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="destructive" size="icon" onClick={() => handleDelete(emp)} aria-label={`Delete employee ${emp.name}`} disabled={isSubmitting}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))
                   ) : (
-                     <TableRow>
-                        <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
-                           No employees found. Click "Add Employee" to start building your team list.
-                        </TableCell>
-                     </TableRow>
+                    <TableRow>
+                      <TableCell colSpan={6} className="h-24 text-center text-muted-foreground">
+                        No employees found. Click "Add Employee" to start building your team list.
+                      </TableCell>
+                    </TableRow>
                   )}
                 </TableBody>
               </Table>

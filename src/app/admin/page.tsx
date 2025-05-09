@@ -6,107 +6,106 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableCaption } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useToast } from '@/hooks/use-toast'; // Use the context hook
+import { useToast } from '@/hooks/use-toast';
 import { getAttendanceRecords, generateAttendanceCsv, AttendanceRecord } from '@/services/attendance';
-import { checkLoginStatus, logoutUser } from '@/services/auth'; // Auth utilities
+import { checkLoginStatus, logoutUser } from '@/services/auth';
 import { Download, Filter, LogOut, Users, AlertTriangle, Loader2 } from 'lucide-react';
-import { DatePickerWithRange } from '@/components/ui/date-range-picker'; // Ensure this component exists
+import { DatePickerWithRange } from '@/components/ui/date-range-picker';
 import type { DateRange } from 'react-day-picker';
-import Image from 'next/image'; // For background
+import Image from 'next/image';
 
 const AdminPage: NextPage = () => {
   const router = useRouter();
   const { toast } = useToast();
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true); // Loading records state
+  const [isLoading, setIsLoading] = useState(true);
   const [isDownloading, setIsDownloading] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  const [isClient, setIsClient] = useState(false); // Track client-side mount
+  const [isClient, setIsClient] = useState(false);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
-  // Set isClient on mount
   useEffect(() => {
     setIsClient(true);
   }, []);
 
-  // Check login status and fetch initial records
   useEffect(() => {
-    if (isClient) { // Only run on client
-        const loggedInUser = checkLoginStatus();
-        console.log("Admin page: Checked login status:", loggedInUser);
-
-        if (typeof loggedInUser !== 'string' || loggedInUser.toLowerCase() !== 'admin') {
-            toast({ title: 'Unauthorized', description: 'Redirecting to login...', variant: 'destructive' });
-            logoutUser(); // Ensure clean logout
-            router.replace('/login');
-        } else {
-            // User is 'admin', proceed to fetch records
-            const today = new Date();
-            const sevenDaysAgo = new Date(today);
-            sevenDaysAgo.setDate(today.getDate() - 7);
-            const initialRange = { from: sevenDaysAgo, to: today };
-            setDateRange(initialRange); // Set initial date range state
-            fetchRecords(initialRange); // Fetch for the initial range
-        }
+    if (isClient) {
+      const loggedInUser = checkLoginStatus();
+      console.log("Admin page: Auth check. LoggedInUser:", loggedInUser);
+      if (typeof loggedInUser === 'string' && loggedInUser.toLowerCase() === 'admin') {
+        setIsAdminAuthenticated(true);
+      } else {
+        setIsAdminAuthenticated(false);
+        toast({ title: 'Unauthorized', description: 'Redirecting to login...', variant: 'destructive' });
+        logoutUser();
+        router.replace('/login');
+      }
     }
-  }, [router, toast, isClient]); // Add isClient dependency
+  }, [isClient, router, toast]);
 
-
-  // Fetch attendance records based on date range
   const fetchRecords = useCallback(async (range?: DateRange) => {
-    if (!isClient) return; // Ensure client-side execution
+    if (!isClient) return;
 
     setIsLoading(true);
-    setError(null); // Clear previous errors
+    setError(null);
     console.log("Fetching records for range:", range);
     try {
-      // Get records using the service function
       const records = await getAttendanceRecords(range?.from, range?.to);
-       console.log(`Fetched ${records.length} records.`);
+      console.log(`Fetched ${records.length} records.`);
 
-      // Ensure timestamp and other dates are Date objects and handle potential nulls/invalid data
-       const processedRecords = records.map(record => ({
-            ...record,
-            timestamp: record.timestamp instanceof Date ? record.timestamp : new Date(record.timestamp || 0), // Handle invalid/missing timestamp
-            inTime: record.inTime ? (record.inTime instanceof Date ? record.inTime : new Date(record.inTime)) : undefined,
-            outTime: record.outTime ? (record.outTime instanceof Date ? record.outTime : new Date(record.outTime)) : undefined,
-            // Add defaults for potentially missing fields to avoid runtime errors
-             employeeId: record.employeeId ?? 'N/A',
-             phone: record.phone ?? 'N/A',
-             name: record.name ?? 'N/A',
-             latitude: record.latitude ?? 0,
-             longitude: record.longitude ?? 0,
-             address: record.address ?? 'N/A',
-             captureMethod: record.captureMethod ?? 'unknown',
-             shiftTiming: record.shiftTiming ?? 'N/A',
-             workingLocation: record.workingLocation ?? 'N/A',
-             photoDataUri: record.photoDataUri ?? '', // Ensure photoDataUri exists
-       })).filter(record => !isNaN(record.timestamp.getTime())); // Filter out records with invalid timestamps
+      const processedRecords = records.map(record => ({
+        ...record,
+        timestamp: record.timestamp instanceof Date ? record.timestamp : new Date(record.timestamp || 0),
+        inTime: record.inTime ? (record.inTime instanceof Date ? record.inTime : new Date(record.inTime)) : undefined,
+        outTime: record.outTime ? (record.outTime instanceof Date ? record.outTime : new Date(record.outTime)) : undefined,
+        employeeId: record.employeeId ?? 'N/A',
+        phone: record.phone ?? 'N/A',
+        name: record.name ?? 'N/A',
+        latitude: record.latitude ?? 0,
+        longitude: record.longitude ?? 0,
+        address: record.address ?? 'N/A',
+        captureMethod: record.captureMethod ?? 'unknown',
+        shiftTiming: record.shiftTiming ?? 'N/A',
+        workingLocation: record.workingLocation ?? 'N/A',
+        photoDataUri: record.photoDataUri ?? '',
+      })).filter(record => !isNaN(record.timestamp.getTime()));
 
-       setAttendanceRecords(processedRecords);
-       // Avoid toast spamming on every fetch, maybe only on initial load or specific actions
-       // toast({ title: 'Records Loaded', description: `${processedRecords.length} records found for the selected period.` });
+      setAttendanceRecords(processedRecords);
     } catch (error: any) {
       console.error('Failed to fetch attendance records:', error);
       setError('Could not fetch attendance records. Please try again.');
       toast({ title: 'Error', description: 'Could not fetch attendance records.', variant: 'destructive' });
-      setAttendanceRecords([]); // Clear records on error
+      setAttendanceRecords([]);
     } finally {
       setIsLoading(false);
     }
-  }, [toast, isClient]); // Add isClient dependency
+  }, [toast, isClient]);
 
-  // Handle date range change and fetch records
+  useEffect(() => {
+    if (isClient && isAdminAuthenticated) {
+      console.log("Admin page: Authenticated, proceeding to set initial date range and fetch records.");
+      const today = new Date();
+      const sevenDaysAgo = new Date(today);
+      sevenDaysAgo.setDate(today.getDate() - 7);
+      const initialRange = { from: sevenDaysAgo, to: today };
+      setDateRange(initialRange);
+      fetchRecords(initialRange);
+    }
+  }, [isClient, isAdminAuthenticated, fetchRecords, setDateRange]);
+
+
   const handleDateChange = useCallback((range: DateRange | undefined) => {
     console.log("Date range selected:", range);
-    setDateRange(range); // Update state
-    fetchRecords(range); // Fetch records for the new range
-  }, [fetchRecords]); // Add fetchRecords dependency
+    setDateRange(range);
+    if (isAdminAuthenticated) { // Only fetch if authenticated
+        fetchRecords(range);
+    }
+  }, [fetchRecords, isAdminAuthenticated]);
 
 
-  // Download attendance data as CSV
   const handleDownloadCsv = useCallback(() => {
     if (attendanceRecords.length === 0) {
       toast({ title: 'No Data', description: 'There are no records in the selected range to download.', variant: 'warning' });
@@ -114,10 +113,9 @@ const AdminPage: NextPage = () => {
     }
     setIsDownloading(true);
     try {
-       // Pass the currently displayed (and processed) records to the generator
       const csvData = generateAttendanceCsv(attendanceRecords);
       if (!csvData) {
-         throw new Error("CSV data generation returned empty.");
+        throw new Error("CSV data generation returned empty.");
       }
 
       const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
@@ -125,7 +123,6 @@ const AdminPage: NextPage = () => {
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
 
-      // Generate filename with date range if available
       let filename = 'attendance_report';
       if (dateRange?.from) {
         try { filename += `_${formatDate(dateRange.from)}`; } catch { filename += '_invalid-start-date'; }
@@ -133,7 +130,6 @@ const AdminPage: NextPage = () => {
       if (dateRange?.to) {
         try { filename += `_to_${formatDate(dateRange.to)}`; } catch { filename += '_invalid-end-date'; }
       } else if (dateRange?.from) {
-         // If only 'from' date is selected, use it as a single date report
         try { filename += `_on_${formatDate(dateRange.from)}`; } catch { filename += '_invalid-date'; }
       }
       filename += '.csv';
@@ -143,7 +139,7 @@ const AdminPage: NextPage = () => {
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(url); // Clean up blob URL
+      URL.revokeObjectURL(url);
       toast({ title: 'Download Started', description: 'Your attendance report CSV is being generated.' });
     } catch (error: any) {
       console.error('Failed to generate or download CSV:', error);
@@ -151,83 +147,76 @@ const AdminPage: NextPage = () => {
     } finally {
       setIsDownloading(false);
     }
-  }, [attendanceRecords, dateRange, toast]); // Add dependencies
+  }, [attendanceRecords, dateRange, toast]);
 
 
-  // Helper function to format date for filename
   const formatDate = (date: Date | undefined): string => {
-     if (!date || !(date instanceof Date) || isNaN(date.getTime())) return 'invalid_date';
-     // Format as YYYY-MM-DD
-     const year = date.getFullYear();
-     const month = String(date.getMonth() + 1).padStart(2, '0'); // Months are 0-indexed
-     const day = String(date.getDate()).padStart(2, '0');
-     return `${year}-${month}-${day}`;
+    if (!date || !(date instanceof Date) || isNaN(date.getTime())) return 'invalid_date';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
-   // Helper function to format date/time for display, handling potential invalid dates
-   const formatDisplayDateTime = (date: Date | undefined | string, type: 'date' | 'time'): string => {
-      if (!date) return '--';
-      const d = date instanceof Date ? date : new Date(date);
-      if (isNaN(d.getTime())) return 'Invalid'; // More explicit than '--' for invalid dates
-      try {
-         if (type === 'date') return d.toLocaleDateString();
-         if (type === 'time') return d.toLocaleTimeString();
-         return '--';
-      } catch {
-         return 'Format Error';
-      }
-   };
+  const formatDisplayDateTime = (date: Date | undefined | string, type: 'date' | 'time'): string => {
+    if (!date) return '--';
+    const d = date instanceof Date ? date : new Date(date);
+    if (isNaN(d.getTime())) return 'Invalid';
+    try {
+      if (type === 'date') return d.toLocaleDateString();
+      if (type === 'time') return d.toLocaleTimeString();
+      return '--';
+    } catch {
+      return 'Format Error';
+    }
+  };
 
-  // Logout handler
   const handleLogout = useCallback(() => {
-    logoutUser(); // Use utility function
+    logoutUser();
     toast({ title: 'Logged Out', description: 'You have been logged out.' });
     router.replace('/login');
   }, [router, toast]);
 
-  // Navigate to Employee Management
   const goToEmployeeManagement = () => {
     router.push('/admin/employees');
   };
 
-   // Memoize the records to prevent unnecessary re-renders of the table
-   // Use the processed records for memoization
-   const memoizedRecords = useMemo(() => attendanceRecords, [attendanceRecords]);
+  const memoizedRecords = useMemo(() => attendanceRecords, [attendanceRecords]);
 
-   // Render initial loading or null if not client-side yet
-   if (!isClient) {
-       return (
-           <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-100 via-indigo-100 to-purple-200 dark:from-gray-800 dark:via-gray-900 dark:to-black">
-                <Loader2 className="h-16 w-16 animate-spin text-primary" />
-           </div>
-       );
-   }
+  if (!isClient || (isClient && !isAdminAuthenticated && isLoading)) { // Show loader if not client or not yet authenticated by client check
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-100 via-indigo-100 to-purple-200 dark:from-gray-800 dark:via-gray-900 dark:to-black">
+        <Loader2 className="h-16 w-16 animate-spin text-primary" />
+      </div>
+    );
+  }
 
+  // If isClient is true, but isAdminAuthenticated is false, the auth useEffect would have redirected.
+  // This rendering path is for when isAdminAuthenticated is true.
 
   return (
     <div className="relative flex flex-col min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-100 dark:from-gray-800 dark:via-gray-900 dark:to-black p-4 md:p-8 overflow-hidden">
-       {/* Background Image */}
-       <Image
-         data-ai-hint="office background"
-         src="https://picsum.photos/seed/adminbg/1920/1080" // Placeholder background
-         alt="Admin background"
-         layout="fill"
-         objectFit="cover"
-         quality={60}
-         className="absolute inset-0 z-0 opacity-10 dark:opacity-5"
-       />
+      <Image
+        data-ai-hint="office background"
+        src="https://picsum.photos/seed/adminbg/1920/1080"
+        alt="Admin background"
+        layout="fill"
+        objectFit="cover"
+        quality={60}
+        className="absolute inset-0 z-0 opacity-10 dark:opacity-5"
+      />
       <header className="relative z-10 mb-6 flex flex-col md:flex-row justify-between items-center gap-4">
-         <div className="flex flex-col">
-             <h1 className="text-2xl md:text-3xl font-bold text-primary">Admin Dashboard</h1>
-             <p className="text-sm text-muted-foreground">E Wheels and Logistics</p>
-         </div>
+        <div className="flex flex-col">
+          <h1 className="text-2xl md:text-3xl font-bold text-primary">Admin Dashboard</h1>
+          <p className="text-sm text-muted-foreground">E Wheels and Logistics</p>
+        </div>
         <div className="flex gap-2 flex-wrap justify-center md:justify-end">
-           <Button variant="outline" onClick={goToEmployeeManagement}>
-              <Users className="mr-2 h-4 w-4" /> Manage Employees
-           </Button>
-           <Button variant="outline" onClick={handleLogout}>
-             <LogOut className="mr-2 h-4 w-4" /> Logout
-           </Button>
+          <Button variant="outline" onClick={goToEmployeeManagement}>
+            <Users className="mr-2 h-4 w-4" /> Manage Employees
+          </Button>
+          <Button variant="outline" onClick={handleLogout}>
+            <LogOut className="mr-2 h-4 w-4" /> Logout
+          </Button>
         </div>
       </header>
 
@@ -237,18 +226,17 @@ const AdminPage: NextPage = () => {
           <CardDescription>View, filter, and download employee attendance data.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Filter and Download Section */}
           <div className="flex flex-col md:flex-row gap-4 justify-between items-center p-4 bg-muted/50 rounded-lg border">
-             <div className="flex items-center gap-2 w-full md:w-auto">
-                 <Filter className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                 <DatePickerWithRange
-                    date={dateRange}
-                    onDateChange={handleDateChange} // Use the memoized handler
-                 />
-             </div>
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <Filter className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+              <DatePickerWithRange
+                date={dateRange}
+                onDateChange={handleDateChange}
+              />
+            </div>
             <Button
-              onClick={handleDownloadCsv} // Use the memoized handler
-              disabled={isDownloading || isLoading || memoizedRecords.length === 0} // Use memoizedRecords for check
+              onClick={handleDownloadCsv}
+              disabled={isDownloading || isLoading || memoizedRecords.length === 0}
               className="w-full md:w-auto flex-shrink-0"
             >
               {isDownloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
@@ -256,21 +244,18 @@ const AdminPage: NextPage = () => {
             </Button>
           </div>
 
-           {/* Error Display */}
-           {error && (
-                <div className="p-4 bg-destructive/10 border border-destructive/30 rounded-md flex items-center gap-3">
-                     <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0" />
-                     <p className="text-sm text-destructive">{error}</p>
-                </div>
-           )}
+          {error && (
+            <div className="p-4 bg-destructive/10 border border-destructive/30 rounded-md flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0" />
+              <p className="text-sm text-destructive">{error}</p>
+            </div>
+          )}
 
-
-          {/* Attendance Table */}
           <div className="mt-4">
-            {isLoading ? (
+            {isLoading && isAdminAuthenticated ? ( // Only show loading records if authenticated and actually loading
               <div className="flex flex-col justify-center items-center h-64 text-center">
-                 <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-                 <p className="text-muted-foreground">Loading records for the selected period...</p>
+                <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+                <p className="text-muted-foreground">Loading records for the selected period...</p>
               </div>
             ) : (
               <ScrollArea className="h-[60vh] rounded-md border">
@@ -280,63 +265,62 @@ const AdminPage: NextPage = () => {
                       ? 'No attendance records found for the selected date range.'
                       : `Showing ${memoizedRecords.length} records.`}
                   </TableCaption>
-                  <TableHeader className="sticky top-0 bg-secondary/95 backdrop-blur-sm z-10"> {/* Make header sticky */}
+                  <TableHeader className="sticky top-0 bg-secondary/95 backdrop-blur-sm z-10">
                     <TableRow>
                       <TableHead className="whitespace-nowrap">Employee ID</TableHead>
                       <TableHead className="whitespace-nowrap">Phone</TableHead>
                       <TableHead>Name</TableHead>
                       <TableHead className="whitespace-nowrap">Date</TableHead>
                       <TableHead className="whitespace-nowrap">Marked Time</TableHead>
-                       <TableHead className="whitespace-nowrap">In Time</TableHead>
-                       <TableHead className="whitespace-nowrap">Out Time</TableHead>
+                      <TableHead className="whitespace-nowrap">In Time</TableHead>
+                      <TableHead className="whitespace-nowrap">Out Time</TableHead>
                       <TableHead className="whitespace-nowrap">Location (Lat, Lon)</TableHead>
                       <TableHead>Address</TableHead>
                       <TableHead className="whitespace-nowrap">Method</TableHead>
-                       <TableHead className="whitespace-nowrap">Shift</TableHead>
-                       <TableHead className="whitespace-nowrap">Work Location</TableHead>
-                       <TableHead>Photo</TableHead>
+                      <TableHead className="whitespace-nowrap">Shift</TableHead>
+                      <TableHead className="whitespace-nowrap">Work Location</TableHead>
+                      <TableHead>Photo</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {memoizedRecords.length > 0 ? (
                       memoizedRecords.map((record) => (
-                        <TableRow key={record.id || record.timestamp.toISOString() + Math.random()}> {/* Add random suffix if ID missing */}
+                        <TableRow key={record.id || record.timestamp.toISOString() + Math.random()}>
                           <TableCell className="whitespace-nowrap">{record.employeeId}</TableCell>
                           <TableCell className="whitespace-nowrap">{record.phone}</TableCell>
                           <TableCell>{record.name}</TableCell>
-                           {/* Format dates and times using the helper */}
                           <TableCell className="whitespace-nowrap">{formatDisplayDateTime(record.timestamp, 'date')}</TableCell>
                           <TableCell className="whitespace-nowrap">{formatDisplayDateTime(record.timestamp, 'time')}</TableCell>
-                           <TableCell className="whitespace-nowrap">{formatDisplayDateTime(record.inTime, 'time')}</TableCell>
-                           <TableCell className="whitespace-nowrap">{formatDisplayDateTime(record.outTime, 'time')}</TableCell>
+                          <TableCell className="whitespace-nowrap">{formatDisplayDateTime(record.inTime, 'time')}</TableCell>
+                          <TableCell className="whitespace-nowrap">{formatDisplayDateTime(record.outTime, 'time')}</TableCell>
                           <TableCell className="whitespace-nowrap">{`${record.latitude?.toFixed(4) ?? 'N/A'}, ${record.longitude?.toFixed(4) ?? 'N/A'}`}</TableCell>
                           <TableCell className="min-w-[200px] max-w-xs truncate" title={record.address}>{record.address}</TableCell>
                           <TableCell className="whitespace-nowrap">{record.captureMethod}</TableCell>
-                           <TableCell className="whitespace-nowrap">{record.shiftTiming}</TableCell>
-                           <TableCell className="whitespace-nowrap">{record.workingLocation}</TableCell>
-                           <TableCell>
-                             {record.photoDataUri ? (
-                               <a
-                                  href={record.photoDataUri}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-600 hover:underline text-sm"
-                                  title="View captured photo"
-                                >
-                                 View
-                               </a>
-                             ) : (
-                               <span className="text-muted-foreground text-sm">N/A</span>
-                             )}
-                           </TableCell>
+                          <TableCell className="whitespace-nowrap">{record.shiftTiming}</TableCell>
+                          <TableCell className="whitespace-nowrap">{record.workingLocation}</TableCell>
+                          <TableCell>
+                            {record.photoDataUri ? (
+                              <a
+                                href={record.photoDataUri}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:underline text-sm"
+                                title="View captured photo"
+                              >
+                                View
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground text-sm">N/A</span>
+                            )}
+                          </TableCell>
                         </TableRow>
                       ))
                     ) : (
-                       <TableRow>
-                         <TableCell colSpan={13} className="h-24 text-center text-muted-foreground">
-                           No records found for the selected criteria. Adjust the date filter or add employees.
-                         </TableCell>
-                       </TableRow>
+                      <TableRow>
+                        <TableCell colSpan={13} className="h-24 text-center text-muted-foreground">
+                          No records found for the selected criteria. Adjust the date filter or add employees.
+                        </TableCell>
+                      </TableRow>
                     )}
                   </TableBody>
                 </Table>
