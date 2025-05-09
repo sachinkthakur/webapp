@@ -1,8 +1,10 @@
-
 'use server'; // Keep as server action if possible, but localStorage makes it client-only conceptually
 
 import type { Employee } from './attendance'; // Assuming Employee type is also here or imported
 import { getEmployees } from './attendance';
+
+// For this example, admin password. NEVER do this in production for real credentials.
+const ADMIN_PASSWORD = '12345';
 
 /**
  * Authenticates a user based on userId and password.
@@ -17,20 +19,22 @@ import { getEmployees } from './attendance';
  */
 export const authenticateUser = async (userId: string, password?: string): Promise<boolean> => {
   console.log(`Attempting authentication for userId: ${userId}`);
+  
+  // Trim userId at the very beginning
+  const trimmedUserId = typeof userId === 'string' ? userId.trim() : '';
+
   try {
-    if (typeof userId === 'string' && userId.toLowerCase() === 'admin') {
+    if (trimmedUserId.toLowerCase() === 'admin') {
       // Securely compare passwords. Avoid storing plain text passwords.
-      // For this example, we use a hardcoded password. NEVER do this in production.
-      const isAdmin = password === '12345'; // Updated password
-      console.log(`Admin login attempt result: ${isAdmin}`);
+      const isAdmin = password === ADMIN_PASSWORD;
+      console.log(`Admin login attempt with password "${password}". Result: ${isAdmin}`);
       return isAdmin;
     } else {
       // Check if it's a registered employee based on phone number
-       // Access localStorage only on the client-side
        if (typeof window !== 'undefined') {
          const employees = await getEmployees(); // Fetch employees (uses localStorage)
-         const employeeExists = employees.some(emp => emp.phone === userId);
-         console.log(`Employee login attempt result for phone ${userId}: ${employeeExists}`);
+         const employeeExists = employees.some(emp => emp.phone === trimmedUserId);
+         console.log(`Employee login attempt result for phone ${trimmedUserId}: ${employeeExists}`);
          // For now, employees don't need a password, just existence
          return employeeExists;
        } else {
@@ -40,7 +44,6 @@ export const authenticateUser = async (userId: string, password?: string): Promi
     }
   } catch (error) {
     console.error('Error during authentication:', error);
-    // Handle potential errors during employee fetching or comparison
     return false;
   }
 };
@@ -48,13 +51,17 @@ export const authenticateUser = async (userId: string, password?: string): Promi
 /**
  * Checks if a user is currently logged in based on localStorage.
  * NOTE: Inherently client-side.
- * @returns string | null - The logged-in user ID or null if not logged in.
+ * @returns string | null - The logged-in user ID (trimmed) or null if not logged in or empty.
  */
 export const checkLoginStatus = (): string | null => {
    if (typeof window !== 'undefined') {
      try {
        const loggedInUser = localStorage.getItem('loggedInUser');
-       return loggedInUser;
+       // Trim the retrieved value and ensure it's not an empty string.
+       if (loggedInUser && loggedInUser.trim() !== '') {
+         return loggedInUser.trim(); // Return the trimmed, non-empty string
+       }
+       return null; // Return null if not found, null, or empty string after trim
      } catch (error) {
        console.error('Error accessing localStorage for login status:', error);
        return null;
@@ -80,16 +87,24 @@ export const logoutUser = (): void => {
 
 /**
  * Stores the logged-in user's ID in localStorage.
+ * If the user is 'admin' (case-insensitive), it's stored as lowercase 'admin'.
  * NOTE: Inherently client-side.
  * @param userId - The ID of the user to store.
  */
 export const storeLoginSession = (userId: string): void => {
     if (typeof window !== 'undefined') {
       try {
-        localStorage.setItem('loggedInUser', userId);
-        console.log(`Stored login session for user: ${userId}`);
+        let valueToStore = typeof userId === 'string' ? userId.trim() : ''; // Trim and ensure it's a string
+
+        if (valueToStore.toLowerCase() === 'admin') {
+          valueToStore = 'admin'; // Standardize to lowercase 'admin' for storage
+        }
+        
+        localStorage.setItem('loggedInUser', valueToStore);
+        console.log(`Stored login session for user: "${valueToStore}"`);
       } catch (error) {
         console.error('Error storing login session in localStorage:', error);
       }
     }
 };
+
