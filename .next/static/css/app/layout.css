@@ -1270,6 +1270,9 @@ video {
 .bg-red-500\/90 {
   background-color: rgb(239 68 68 / 0.9);
 }
+.bg-destructive\/80 {
+  background-color: hsl(var(--destructive) / 0.8);
+}
 .bg-gradient-to-br {
   background-image: linear-gradient(to bottom right, var(--tw-gradient-stops));
 }
@@ -1740,6 +1743,9 @@ video {
 }
 .running {
   animation-play-state: running;
+}
+.paused {
+  animation-play-state: paused;
 }
 
 .file\:border-0::file-selector-button {
