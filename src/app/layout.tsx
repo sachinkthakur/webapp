@@ -1,54 +1,31 @@
-{'use client'; // Ensure this file is treated as a Client Component if it uses hooks like useState/useEffect directly or imports components that do.
-
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
-import { ThemeProvider } from '@/components/theme-provider'; // Corrected import path if needed, ensure file exists
+import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/toaster';
 import { cn } from '@/lib/utils';
-import { ToastProvider } from '@/hooks/use-toast'; // Import ToastProvider
+import { ToastProvider } from '@/hooks/use-toast';
 
 const inter = Inter({ subsets: ['latin'] });
 
-// Metadata should ideally be defined in a server component or exported separately if this remains client-side.
-// For simplicity here, we'll keep it, but be aware of potential implications.
-// If this component *must* be 'use client', static metadata export might be better.
-/*
 export const metadata: Metadata = {
   title: 'FieldTrack - E Wheels and Logistics',
-  description: 'Employee Attendance and Tracking Application',
-  // PWA specific metadata
-  manifest: '/manifest.json',
-  themeColor: '#ffffff', // Adjust theme color
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'default',
-    title: 'FieldTrack',
-    // startupImage: '/images/apple-touch-icon.png', // Optional: Add startup images
-  },
-  // Add other PWA or standard metadata as needed
-  icons: {
-    icon: '/favicon.ico', // Standard favicon
-    apple: '/images/apple-touch-icon.png', // Apple touch icon
-    // Add other icon sizes if needed
-  },
+  description: 'Employee Attendance and Tracking Application'
+  // manifest: '/manifest.json' // Kept commented as per previous state
 };
-*/
 
 export default function RootLayout({
   children,
-}: Readonly<{ // Use Readonly for props type
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="en" suppressHydrationWarning>
-      {/* Removed whitespace inside <head> */}
+      {/* No whitespace directly inside html before head */}
       <head>
-        {/* Basic Meta Tags */}
+        {/* Basic Meta Tags - title and description are handled by the `metadata` export */}
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>FieldTrack - E Wheels and Logistics</title>
-        <meta name="description" content="Employee Attendance and Tracking Application" />
 
         {/* PWA Meta Tags */}
         <meta name="application-name" content="FieldTrack" />
@@ -60,7 +37,7 @@ export default function RootLayout({
         <meta name="msapplication-config" content="/icons/browserconfig.xml" />
         <meta name="msapplication-TileColor" content="#2B5797" />
         <meta name="msapplication-tap-highlight" content="no" />
-        <meta name="theme-color" content="#000000" />
+        <meta name="theme-color" content="#000000" /> {/* Ensure this matches globals.css if applicable */}
 
         {/* Link Tags */}
         <link rel="apple-touch-icon" href="/icons/touch-icon-iphone.png" />
@@ -74,29 +51,28 @@ export default function RootLayout({
         <link rel="mask-icon" href="/icons/safari-pinned-tab.svg" color="#5bbad5" />
         <link rel="shortcut icon" href="/favicon.ico" />
 
-        {/* Add to home screen for Safari on iOS */}
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        {/* Add to home screen for Safari on iOS - these are duplicates if already set, can be removed if so */}
+        {/* <meta name="apple-mobile-web-app-capable" content="yes" /> */}
+        {/* <meta name="apple-mobile-web-app-status-bar-style" content="default" /> */}
 
-        {/* Older Android/Chrome versions might need this */}
-        <meta name="mobile-web-app-capable" content="yes" />
+        {/* Older Android/Chrome versions might need this - also potentially duplicate */}
+        {/* <meta name="mobile-web-app-capable" content="yes" /> */}
       </head>
       <body
         className={cn(
           'min-h-screen bg-background font-sans antialiased',
-          inter.className // Use inter.variable if using variable fonts
+          inter.className
         )}
       >
-        {/* Wrap children with providers */}
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
           enableSystem
           disableTransitionOnChange
         >
-          <ToastProvider> {/* ToastProvider needs to wrap the content */}
+          <ToastProvider>
             {children}
-            <Toaster /> {/* Toaster renders the toasts */}
+            <Toaster />
           </ToastProvider>
         </ThemeProvider>
       </body>
