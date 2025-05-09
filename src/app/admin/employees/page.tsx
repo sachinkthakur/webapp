@@ -37,21 +37,45 @@ const EmployeeManagementPage: NextPage = () => {
   const router = useRouter();
   const { toast } = useToast();
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true); // For data fetching, not auth
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isClient, setIsClient] = useState(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [authCheckCompleted, setAuthCheckCompleted] = useState(false);
 
 
   useEffect(() => {
     setIsClient(true);
   }, []);
 
+  useEffect(() => {
+    if (isClient) {
+      const status = checkLoginStatus();
+      console.log("EmployeeManagementPage: Auth Check. Current login status from checkLoginStatus():", status);
+
+      if (status === 'admin') {
+        console.log("EmployeeManagementPage: User IS admin. Setting isAdminAuthenticated to true.");
+        setIsAdminAuthenticated(true);
+      } else {
+        console.log("EmployeeManagementPage: User IS NOT admin or status is unexpected. Status:", status, ". Redirecting to login.");
+        setIsAdminAuthenticated(false); // Ensure this is set
+        toast({ title: 'Unauthorized Access', description: 'You must be an administrator to view this page. Redirecting...', variant: 'destructive' });
+        logoutUser(); // This clears the session
+        router.replace('/login');
+      }
+      setAuthCheckCompleted(true); // Mark that the auth check has run
+    }
+  }, [isClient, router, toast]);
+
+
   const fetchEmployees = useCallback(async () => {
-    if (!isClient || !isAdminAuthenticated) return; // Added isAdminAuthenticated check
+    if (!isClient || !authCheckCompleted || !isAdminAuthenticated) {
+      console.log("EmployeeManagementPage: fetchEmployees skipped. Conditions: isClient:", isClient, "authCheckCompleted:", authCheckCompleted, "isAdminAuthenticated:", isAdminAuthenticated);
+      return;
+    }
 
     setIsLoading(true);
     setError(null);
@@ -60,35 +84,22 @@ const EmployeeManagementPage: NextPage = () => {
       fetchedEmployees.sort((a, b) => a.name.localeCompare(b.name));
       setEmployees(fetchedEmployees);
     } catch (error: any) {
-      console.error('Failed to fetch employees:', error);
+      console.error('EmployeeManagementPage: Failed to fetch employees:', error);
       setError('Could not fetch employee list. Please try refreshing the page.');
       toast({ title: 'Error', description: 'Could not fetch employees.', variant: 'destructive' });
     } finally {
       setIsLoading(false);
     }
-  }, [toast, isClient, isAdminAuthenticated]);
+  }, [toast, isClient, authCheckCompleted, isAdminAuthenticated]);
 
   useEffect(() => {
-    if (isClient) {
-      const loggedInUser = checkLoginStatus(); // Returns 'admin' or other ID, or null
-      console.log("Employee Management page: Auth check. LoggedInUser:", loggedInUser);
-      if (typeof loggedInUser === 'string' && loggedInUser === 'admin') { // Strict check
-        setIsAdminAuthenticated(true);
-      } else {
-        setIsAdminAuthenticated(false);
-        toast({ title: 'Unauthorized', description: 'Redirecting to login...', variant: 'destructive' });
-        logoutUser();
-        router.replace('/login');
-      }
-    }
-  }, [isClient, router, toast]);
-
-  useEffect(() => {
-    if (isClient && isAdminAuthenticated) {
-      console.log("Employee Management page: Authenticated, fetching employees.");
+    if (isClient && authCheckCompleted && isAdminAuthenticated) {
+      console.log("EmployeeManagementPage: Authenticated and auth check complete, fetching employees.");
       fetchEmployees();
+    } else if (isClient && authCheckCompleted && !isAdminAuthenticated) {
+      console.log("EmployeeManagementPage: Auth check complete, user not authenticated. Data fetching skipped.");
     }
-  }, [isClient, isAdminAuthenticated, fetchEmployees]);
+  }, [isClient, authCheckCompleted, isAdminAuthenticated, fetchEmployees]);
 
 
   const form = useForm<EmployeeFormValues>({
@@ -162,7 +173,7 @@ const EmployeeManagementPage: NextPage = () => {
       await fetchEmployees();
       handleCloseDialog();
     } catch (error: any) {
-      console.error('Failed to save employee:', error);
+      console.error('EmployeeManagementPage: Failed to save employee:', error);
       let errorMessage = 'Failed to save employee. Please try again.';
       if (error instanceof Error) {
         errorMessage = error.message;
@@ -188,7 +199,7 @@ const EmployeeManagementPage: NextPage = () => {
       toast({ title: 'Success', description: `Employee "${employeeToDelete.name}" deleted successfully.` });
       await fetchEmployees();
     } catch (error: any) {
-      console.error('Failed to delete employee:', error);
+      console.error('EmployeeManagementPage: Failed to delete employee:', error);
       setError(`Could not delete employee: ${error.message || 'Unknown error'}`);
       toast({ title: 'Deletion Error', description: `Could not delete employee: ${error.message || 'Unknown error'}`, variant: 'destructive' });
     } finally {
@@ -206,11 +217,21 @@ const EmployeeManagementPage: NextPage = () => {
     router.replace('/login');
   }, [router, toast]);
 
-  if (!isClient || (isClient && !isAdminAuthenticated && isLoading)) {
+  if (!isClient || !authCheckCompleted) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-200 dark:from-gray-800 dark:via-gray-900 dark:to-black">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-200 dark:from-gray-800 dark:via-gray-900 dark:to-black">
         <Loader2 className="h-16 w-16 animate-spin text-primary" />
+        <p className="ml-4 text-lg mt-4">Verifying authentication...</p>
       </div>
+    );
+  }
+
+  if (!isAdminAuthenticated) {
+     return (
+         <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-red-100 to-red-200 dark:from-gray-800 dark:to-black">
+            <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
+            <p className="text-lg text-destructive">Unauthorized. Redirecting to login...</p>
+         </div>
     );
   }
 
@@ -355,7 +376,7 @@ const EmployeeManagementPage: NextPage = () => {
               <p className="text-sm text-destructive">{error}</p>
             </div>
           )}
-          {isLoading && isAdminAuthenticated ? (
+          {isLoading && isAdminAuthenticated ? ( // Show data loading spinner only if authenticated
             <div className="flex flex-col justify-center items-center h-64 text-center">
               <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
               <p className="text-muted-foreground">Loading employee list...</p>

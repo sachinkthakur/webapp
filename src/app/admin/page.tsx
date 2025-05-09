@@ -20,12 +20,13 @@ const AdminPage: NextPage = () => {
   const router = useRouter();
   const { toast } = useToast();
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true); // For data fetching, not auth
   const [isDownloading, setIsDownloading] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [isClient, setIsClient] = useState(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [authCheckCompleted, setAuthCheckCompleted] = useState(false);
 
   useEffect(() => {
     setIsClient(true);
@@ -33,28 +34,36 @@ const AdminPage: NextPage = () => {
 
   useEffect(() => {
     if (isClient) {
-      const loggedInUser = checkLoginStatus(); // Returns 'admin' or other ID, or null
-      console.log("Admin page: Auth check. LoggedInUser:", loggedInUser);
-      if (typeof loggedInUser === 'string' && loggedInUser === 'admin') { // Strict check
+      const status = checkLoginStatus();
+      console.log("AdminPage: Auth Check. Current login status from checkLoginStatus():", status);
+
+      if (status === 'admin') {
+        console.log("AdminPage: User IS admin. Setting isAdminAuthenticated to true.");
         setIsAdminAuthenticated(true);
       } else {
-        setIsAdminAuthenticated(false);
-        toast({ title: 'Unauthorized', description: 'Redirecting to login...', variant: 'destructive' });
-        logoutUser();
+        console.log("AdminPage: User IS NOT admin or status is unexpected. Status:", status, ". Redirecting to login.");
+        setIsAdminAuthenticated(false); // Ensure this is set
+        toast({ title: 'Unauthorized Access', description: 'You must be an administrator to view this page. Redirecting...', variant: 'destructive' });
+        logoutUser(); // This clears the session
         router.replace('/login');
       }
+      setAuthCheckCompleted(true); // Mark that the auth check has run
     }
   }, [isClient, router, toast]);
 
   const fetchRecords = useCallback(async (range?: DateRange) => {
-    if (!isClient || !isAdminAuthenticated) return; // Added isAdminAuthenticated check
+    // Guard against running if not authenticated or auth check not complete
+    if (!isClient || !authCheckCompleted || !isAdminAuthenticated) {
+      console.log("AdminPage: fetchRecords skipped. Conditions: isClient:", isClient, "authCheckCompleted:", authCheckCompleted, "isAdminAuthenticated:", isAdminAuthenticated);
+      return;
+    }
 
     setIsLoading(true);
     setError(null);
-    console.log("Fetching records for range:", range);
+    console.log("AdminPage: Fetching records for range:", range);
     try {
       const records = await getAttendanceRecords(range?.from, range?.to);
-      console.log(`Fetched ${records.length} records.`);
+      console.log(`AdminPage: Fetched ${records.length} records.`);
 
       const processedRecords = records.map(record => ({
         ...record,
@@ -75,35 +84,41 @@ const AdminPage: NextPage = () => {
 
       setAttendanceRecords(processedRecords);
     } catch (error: any) {
-      console.error('Failed to fetch attendance records:', error);
+      console.error('AdminPage: Failed to fetch attendance records:', error);
       setError('Could not fetch attendance records. Please try again.');
       toast({ title: 'Error', description: 'Could not fetch attendance records.', variant: 'destructive' });
       setAttendanceRecords([]);
     } finally {
       setIsLoading(false);
     }
-  }, [toast, isClient, isAdminAuthenticated]);
+  }, [toast, isClient, authCheckCompleted, isAdminAuthenticated]); // Added authCheckCompleted
 
   useEffect(() => {
-    if (isClient && isAdminAuthenticated) {
-      console.log("Admin page: Authenticated, proceeding to set initial date range and fetch records.");
+    if (isClient && authCheckCompleted && isAdminAuthenticated) {
+      console.log("AdminPage: Authenticated and auth check complete, setting initial date range and fetching records.");
       const today = new Date();
       const sevenDaysAgo = new Date(today);
       sevenDaysAgo.setDate(today.getDate() - 7);
       const initialRange = { from: sevenDaysAgo, to: today };
-      setDateRange(initialRange);
-      fetchRecords(initialRange);
+      setDateRange(initialRange); // This will trigger handleDateChange which calls fetchRecords
+                                   // OR directly call fetchRecords if setDateRange doesn't trigger it via its own effect
+      fetchRecords(initialRange); // Explicitly call fetchRecords after setting initial range
+    } else if (isClient && authCheckCompleted && !isAdminAuthenticated) {
+      console.log("AdminPage: Auth check complete, user not authenticated. Data fetching skipped.");
     }
-  }, [isClient, isAdminAuthenticated, fetchRecords]); // Removed setDateRange to avoid potential re-runs if it's memoized
+  }, [isClient, authCheckCompleted, isAdminAuthenticated, fetchRecords]);
 
 
   const handleDateChange = useCallback((range: DateRange | undefined) => {
-    console.log("Date range selected:", range);
+    console.log("AdminPage: Date range selected:", range);
     setDateRange(range);
-    if (isAdminAuthenticated) { 
+    // Fetch records only if authenticated and auth check is done
+    if (isClient && authCheckCompleted && isAdminAuthenticated) {
         fetchRecords(range);
+    } else {
+      console.log("AdminPage: handleDateChange - fetchRecords skipped due to auth status.");
     }
-  }, [fetchRecords, isAdminAuthenticated]);
+  }, [fetchRecords, isClient, authCheckCompleted, isAdminAuthenticated]);
 
 
   const handleDownloadCsv = useCallback(() => {
@@ -142,7 +157,7 @@ const AdminPage: NextPage = () => {
       URL.revokeObjectURL(url);
       toast({ title: 'Download Started', description: 'Your attendance report CSV is being generated.' });
     } catch (error: any) {
-      console.error('Failed to generate or download CSV:', error);
+      console.error('AdminPage: Failed to generate or download CSV:', error);
       toast({ title: 'Download Error', description: `Could not generate the CSV file: ${error.message}`, variant: 'destructive' });
     } finally {
       setIsDownloading(false);
@@ -183,15 +198,27 @@ const AdminPage: NextPage = () => {
 
   const memoizedRecords = useMemo(() => attendanceRecords, [attendanceRecords]);
 
-  if (!isClient || (isClient && !isAdminAuthenticated && isLoading)) { 
+  if (!isClient || !authCheckCompleted) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-100 via-indigo-100 to-purple-200 dark:from-gray-800 dark:via-gray-900 dark:to-black">
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-100 via-indigo-100 to-purple-200 dark:from-gray-800 dark:via-gray-900 dark:to-black">
         <Loader2 className="h-16 w-16 animate-spin text-primary" />
+        <p className="ml-4 text-lg mt-4">Verifying authentication...</p>
       </div>
     );
   }
 
+  if (!isAdminAuthenticated) {
+    // This state should ideally be brief as the auth useEffect handles redirection.
+    // Provides a fallback message if redirection is delayed.
+    return (
+         <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-red-100 to-red-200 dark:from-gray-800 dark:to-black">
+            <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
+            <p className="text-lg text-destructive">Unauthorized. Redirecting to login...</p>
+         </div>
+    );
+  }
 
+  // Render page content only if authenticated
   return (
     <div className="relative flex flex-col min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-100 dark:from-gray-800 dark:via-gray-900 dark:to-black p-4 md:p-8 overflow-hidden">
       <Image
@@ -250,7 +277,7 @@ const AdminPage: NextPage = () => {
           )}
 
           <div className="mt-4">
-            {isLoading && isAdminAuthenticated ? ( 
+            {isLoading ? ( 
               <div className="flex flex-col justify-center items-center h-64 text-center">
                 <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
                 <p className="text-muted-foreground">Loading records for the selected period...</p>

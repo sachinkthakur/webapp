@@ -4,7 +4,7 @@ import type { Employee } from './attendance'; // Assuming Employee type is also 
 import { getEmployees } from './attendance';
 
 // For this example, admin password. NEVER do this in production for real credentials.
-const ADMIN_PASSWORD = '12345';
+const ADMIN_PASSWORD = '12345'; // Reverted to 12345 as per user's latest request
 
 /**
  * Authenticates a user based on userId and password.
@@ -18,32 +18,28 @@ const ADMIN_PASSWORD = '12345';
  * @returns Promise<boolean> - True if authentication is successful, false otherwise.
  */
 export const authenticateUser = async (userId: string, password?: string): Promise<boolean> => {
-  console.log(`Attempting authentication for userId: ${userId}`);
+  console.log(`[AuthService] authenticateUser: Attempting for userId: "${userId}"`);
   
-  // Trim userId at the very beginning
   const trimmedUserId = typeof userId === 'string' ? userId.trim() : '';
 
   try {
     if (trimmedUserId.toLowerCase() === 'admin') {
-      // Securely compare passwords. Avoid storing plain text passwords.
       const isAdmin = password === ADMIN_PASSWORD;
-      console.log(`Admin login attempt with password "${password}". Result: ${isAdmin}`);
+      console.log(`[AuthService] authenticateUser: Admin login attempt. Password provided: "${password ? '******' : 'undefined'}". Result: ${isAdmin}`);
       return isAdmin;
     } else {
-      // Check if it's a registered employee based on phone number
        if (typeof window !== 'undefined') {
-         const employees = await getEmployees(); // Fetch employees (uses localStorage)
+         const employees = await getEmployees(); 
          const employeeExists = employees.some(emp => emp.phone === trimmedUserId);
-         console.log(`Employee login attempt result for phone ${trimmedUserId}: ${employeeExists}`);
-         // For now, employees don't need a password, just existence
+         console.log(`[AuthService] authenticateUser: Employee login attempt for phone "${trimmedUserId}". Result: ${employeeExists}`);
          return employeeExists;
        } else {
-          console.warn('authenticateUser called on the server-side for non-admin user. This requires client-side localStorage.');
-          return false; // Cannot authenticate non-admin on server
+          console.warn('[AuthService] authenticateUser: Called on server-side for non-admin. localStorage needed. Returning false.');
+          return false;
        }
     }
   } catch (error) {
-    console.error('Error during authentication:', error);
+    console.error('[AuthService] authenticateUser: Error during authentication:', error);
     return false;
   }
 };
@@ -56,25 +52,34 @@ export const authenticateUser = async (userId: string, password?: string): Promi
 export const checkLoginStatus = (): string | null => {
    if (typeof window !== 'undefined') {
      try {
-       let loggedInUser = localStorage.getItem('loggedInUser');
-       if (loggedInUser) {
-         loggedInUser = loggedInUser.trim();
-         // Normalize to lowercase 'admin' on retrieval if it's an admin user
-         if (loggedInUser.toLowerCase() === 'admin') {
-           return 'admin'; 
+       const storedValue = localStorage.getItem('loggedInUser');
+       console.log(`[AuthService] checkLoginStatus: Value from localStorage: "${storedValue}"`);
+
+       if (storedValue) {
+         const trimmedValue = storedValue.trim();
+         console.log(`[AuthService] checkLoginStatus: Trimmed value: "${trimmedValue}"`);
+
+         if (trimmedValue.toLowerCase() === 'admin') {
+           console.log('[AuthService] checkLoginStatus: Recognized as admin. Returning "admin".');
+           return 'admin';
          }
-         // Return other non-empty user IDs as is
-         if (loggedInUser !== '') {
-           return loggedInUser;
+         
+         if (trimmedValue !== '') {
+           console.log(`[AuthService] checkLoginStatus: Recognized as non-admin user. Returning "${trimmedValue}".`);
+           return trimmedValue;
          }
+         console.log('[AuthService] checkLoginStatus: Value was empty after trim. Returning null.');
+         return null; 
        }
-       return null; // Return null if not found, null, or empty string after trim
+       console.log('[AuthService] checkLoginStatus: No value found in localStorage. Returning null.');
+       return null;
      } catch (error) {
-       console.error('Error accessing localStorage for login status:', error);
+       console.error('[AuthService] checkLoginStatus: Error accessing localStorage:', error);
        return null;
      }
    }
-   return null; // Cannot check status on server
+   console.warn('[AuthService] checkLoginStatus: Called on server-side. localStorage not available. Returning null.');
+   return null;
 };
 
 /**
@@ -84,11 +89,14 @@ export const checkLoginStatus = (): string | null => {
 export const logoutUser = (): void => {
     if (typeof window !== 'undefined') {
       try {
+        const oldValue = localStorage.getItem('loggedInUser');
         localStorage.removeItem('loggedInUser');
-        console.log('User logged out.');
+        console.log(`[AuthService] logoutUser: User logged out. Previous localStorage value was "${oldValue}".`);
       } catch (error) {
-         console.error('Error removing item from localStorage during logout:', error);
+         console.error('[AuthService] logoutUser: Error removing item from localStorage during logout:', error);
       }
+    } else {
+      console.warn('[AuthService] logoutUser: Called on server-side. localStorage not available.');
     }
 };
 
@@ -102,15 +110,19 @@ export const storeLoginSession = (userId: string): void => {
     if (typeof window !== 'undefined') {
       try {
         let valueToStore = typeof userId === 'string' ? userId.trim() : ''; 
+        console.log(`[AuthService] storeLoginSession: Original userId: "${userId}", Trimmed for storage: "${valueToStore}"`);
 
         if (valueToStore.toLowerCase() === 'admin') {
           valueToStore = 'admin'; // Standardize to lowercase 'admin' for storage
+          console.log(`[AuthService] storeLoginSession: User is admin, standardized to: "${valueToStore}" for storage.`);
         }
         
         localStorage.setItem('loggedInUser', valueToStore);
-        console.log(`Stored login session for user: "${valueToStore}"`);
+        console.log(`[AuthService] storeLoginSession: Successfully stored "${valueToStore}" in localStorage for key "loggedInUser".`);
       } catch (error) {
-        console.error('Error storing login session in localStorage:', error);
+        console.error('[AuthService] storeLoginSession: Error storing login session in localStorage:', error);
       }
+    } else {
+      console.warn('[AuthService] storeLoginSession: Called on server-side. localStorage not available.');
     }
 };

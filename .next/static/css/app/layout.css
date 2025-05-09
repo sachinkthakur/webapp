@@ -728,6 +728,9 @@ video {
 .mt-6 {
   margin-top: 1.5rem;
 }
+.ml-4 {
+  margin-left: 1rem;
+}
 .flex {
   display: flex;
 }
@@ -1197,6 +1200,11 @@ video {
   --tw-gradient-to: rgb(238 242 255 / 0) var(--tw-gradient-to-position);
   --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
 }
+.from-red-100 {
+  --tw-gradient-from: #fee2e2 var(--tw-gradient-from-position);
+  --tw-gradient-to: rgb(254 226 226 / 0) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
 .via-indigo-100 {
   --tw-gradient-to: rgb(224 231 255 / 0)  var(--tw-gradient-to-position);
   --tw-gradient-stops: var(--tw-gradient-from), #e0e7ff var(--tw-gradient-via-position), var(--tw-gradient-to);
@@ -1238,6 +1246,9 @@ video {
 }
 .to-purple-800 {
   --tw-gradient-to: #6b21a8 var(--tw-gradient-to-position);
+}
+.to-red-200 {
+  --tw-gradient-to: #fecaca var(--tw-gradient-to-position);
 }
 .object-contain {
   -o-object-fit: contain;
@@ -1574,6 +1585,9 @@ video {
 }
 .duration-300 {
   animation-duration: 300ms;
+}
+.running {
+  animation-play-state: running;
 }
 
 .file\:border-0::file-selector-button {
