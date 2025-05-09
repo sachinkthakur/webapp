@@ -1025,6 +1025,9 @@ video {
 .whitespace-nowrap {
   white-space: nowrap;
 }
+.whitespace-pre-line {
+  white-space: pre-line;
+}
 .rounded-\[inherit\] {
   border-radius: inherit;
 }
