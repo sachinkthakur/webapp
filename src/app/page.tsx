@@ -47,6 +47,36 @@ const AttendancePage: NextPage = () => {
     setIsClient(true);
   }, []);
 
+  const fetchLocationAndAddress = useCallback(async () => {
+    if (!isClient) return;
+    setStatusMessage("Getting location...");
+    setProgress(25);
+    try {
+      const coords = await getCurrentPosition();
+      setLocation({ latitude: coords.latitude, longitude: coords.longitude });
+      setStatusMessage("Getting address...");
+      setProgress(50);
+      const addr = await getAddressFromCoordinates(coords.latitude, coords.longitude);
+      setAddress(addr);
+      setStatusMessage("Location and address acquired.");
+      setProgress(75);
+    } catch (err) {
+      console.error('Geolocation/Address error:', err);
+      let errMsg = "Could not get location or address.";
+      if (err instanceof GeolocationError) {
+         errMsg = err.message;
+      } else if (err instanceof Error) {
+          errMsg = err.message;
+      }
+      setError(errMsg);
+      setLocation(null);
+      setAddress(null);
+      setStatusMessage("Error getting location.");
+      setProgress(0);
+      toast({ title: 'Location Error', description: errMsg, variant: 'destructive'});
+    }
+  }, [isClient, toast]);
+
   const fetchEmployeeData = useCallback(async (userId: string) => {
     if (!isClient) return;
     setIsLoading(true); // Set loading true at the beginning of fetch
@@ -125,35 +155,6 @@ const AttendancePage: NextPage = () => {
     }
   }, [isClient]);
 
-   const fetchLocationAndAddress = useCallback(async () => {
-     if (!isClient) return;
-     setStatusMessage("Getting location...");
-     setProgress(25);
-     try {
-       const coords = await getCurrentPosition();
-       setLocation({ latitude: coords.latitude, longitude: coords.longitude });
-       setStatusMessage("Getting address...");
-       setProgress(50);
-       const addr = await getAddressFromCoordinates(coords.latitude, coords.longitude);
-       setAddress(addr);
-       setStatusMessage("Location and address acquired.");
-       setProgress(75);
-     } catch (err) {
-       console.error('Geolocation/Address error:', err);
-       let errMsg = "Could not get location or address.";
-       if (err instanceof GeolocationError) {
-          errMsg = err.message;
-       } else if (err instanceof Error) {
-           errMsg = err.message;
-       }
-       setError(errMsg);
-       setLocation(null);
-       setAddress(null);
-       setStatusMessage("Error getting location.");
-       setProgress(0);
-       toast({ title: 'Location Error', description: errMsg, variant: 'destructive'});
-     }
-   }, [isClient, toast]);
 
   const startVideo = useCallback(async () => {
     if (!isClient || !videoRef.current || isVideoStreaming) return;
