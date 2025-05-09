@@ -1,10 +1,8 @@
+
 'use server'; // Keep as server action if possible, but localStorage makes it client-only conceptually
 
-import { getEmployees } from './attendance'; // Assuming Employee type is also here or imported
-
-// Define the structure of an Employee if not already imported
-// export interface Employee { ... }
-
+import type { Employee } from './attendance'; // Assuming Employee type is also here or imported
+import { getEmployees } from './attendance';
 
 /**
  * Authenticates a user based on userId and password.
@@ -20,10 +18,10 @@ import { getEmployees } from './attendance'; // Assuming Employee type is also h
 export const authenticateUser = async (userId: string, password?: string): Promise<boolean> => {
   console.log(`Attempting authentication for userId: ${userId}`);
   try {
-    if (userId.toLowerCase() === 'admin') {
+    if (typeof userId === 'string' && userId.toLowerCase() === 'admin') {
       // Securely compare passwords. Avoid storing plain text passwords.
       // For this example, we use a hardcoded password. NEVER do this in production.
-      const isAdmin = password === '1234';
+      const isAdmin = password === '12345'; // Updated password
       console.log(`Admin login attempt result: ${isAdmin}`);
       return isAdmin;
     } else {
