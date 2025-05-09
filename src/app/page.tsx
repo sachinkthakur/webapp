@@ -67,7 +67,7 @@ const AttendancePage: NextPage = () => {
       } else if (err instanceof Error) {
           errMsg = err.message;
       }
-      setError(prevError => prevError ? `${prevError}\n${errMsg}` : errMsg); // Append if error already exists
+      setError(prevError => prevError ? `${prevError}\n${errMsg}` : errMsg);
       setLocation(null);
       setAddress(null);
       setStatusMessage(prevMsg => `${prevMsg} Error getting location.`);
@@ -80,12 +80,13 @@ const AttendancePage: NextPage = () => {
     if (!isClient) return;
     setIsLoading(true);
     setStatusMessage("Fetching employee details...");
+    setError(null); // Clear previous errors
     try {
         const empData = await getEmployeeById(userId);
         if (empData) {
             setEmployee(empData);
             setStatusMessage(`Welcome, ${empData.name}! Preparing system...`);
-            await fetchLocationAndAddress(); // Ensure this completes or handles errors
+            await fetchLocationAndAddress(); // Fetch location after employee data is confirmed
         } else {
             setError("Employee details not found. Please contact admin.");
             setStatusMessage("Error fetching employee data.");
@@ -99,7 +100,7 @@ const AttendancePage: NextPage = () => {
         setStatusMessage("Error fetching employee data.");
         toast({ title: 'Error', description: 'Could not fetch employee data.', variant: 'destructive' });
     } finally {
-        setIsLoading(false); 
+        setIsLoading(false);
     }
   }, [router, toast, isClient, fetchLocationAndAddress]);
 
@@ -125,50 +126,56 @@ const AttendancePage: NextPage = () => {
       
       fetchEmployeeData(loggedInUserId);
     }
-  }, [router, toast, isClient, fetchEmployeeData]);
+  }, [isClient, router, toast, fetchEmployeeData]);
+
+  const loadModels = useCallback(async () => {
+    setStatusMessage("Loading recognition models...");
+    setProgress(10);
+    try {
+      await Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri(FACEAPI_MODEL_URL),
+        faceapi.nets.faceLandmark68Net.loadFromUri(FACEAPI_MODEL_URL),
+        faceapi.nets.faceRecognitionNet.loadFromUri(FACEAPI_MODEL_URL),
+      ]);
+      setModelsLoaded(true);
+      setProgress(100);
+      setStatusMessage("Models loaded. Ready for camera.");
+      console.log('FaceAPI models loaded');
+      setError(null); // Clear any previous model loading error if successful
+    } catch (err: any) {
+      console.error('Error loading FaceAPI models:', err);
+      let detailedErrorMessage = "Failed to load face recognition models. This is a critical error.\n\n";
+      detailedErrorMessage += "ACTION REQUIRED: You must manually place the required model files (e.g., tiny_face_detector_model-weights_manifest.json, face_landmark_68_model-weights_manifest.json, face_recognition_model-weights_manifest.json, and their associated .bin files) into the /public/models directory of your project. The application cannot start without them.\n\n";
+      detailedErrorMessage += "After placing the files, refresh the page. Check the browser's Network tab in Developer Tools for any 404 (Not Found) errors related to these model files.\n\n";
+      if (err.message) {
+        detailedErrorMessage += `Specific error reported by the system: ${err.message}`;
+      } else if (typeof err === 'string') {
+        detailedErrorMessage += `Specific error reported by the system: ${err}`;
+      } else {
+        detailedErrorMessage += `Specific error reported by the system: An unknown error occurred during model loading.`;
+      }
+      setError(detailedErrorMessage);
+      setStatusMessage("CRITICAL ERROR: Face models missing or inaccessible.");
+      setProgress(0);
+      toast({
+        title: 'Model Loading Error',
+        description: 'Critical face recognition models are missing or inaccessible. Please check instructions and refresh.',
+        variant: 'destructive',
+        duration: 15000, 
+      });
+    }
+  }, [toast]); // Added toast to dependency array
 
 
   useEffect(() => {
-    if (isClient) {
-        const loadModels = async () => {
-          setStatusMessage("Loading recognition models...");
-          setProgress(10);
-          try {
-            await Promise.all([
-              faceapi.nets.tinyFaceDetector.loadFromUri(FACEAPI_MODEL_URL),
-              faceapi.nets.faceLandmark68Net.loadFromUri(FACEAPI_MODEL_URL),
-              faceapi.nets.faceRecognitionNet.loadFromUri(FACEAPI_MODEL_URL),
-            ]);
-            setModelsLoaded(true);
-            setProgress(100);
-            setStatusMessage("Models loaded. Ready for camera.");
-            console.log('FaceAPI models loaded');
-          } catch (err: any) {
-            console.error('Error loading FaceAPI models:', err);
-            let detailedErrorMessage = "Failed to load face recognition models. This is a critical error.\n\n";
-            detailedErrorMessage += "Please ensure model files (e.g., tiny_face_detector_model-weights_manifest.json, face_landmark_68_model-weights_manifest.json, face_recognition_model-weights_manifest.json, and their associated .bin files) are correctly placed in the /public/models directory of your project.\n\n";
-            detailedErrorMessage += "After placing the files, refresh the page. Check the browser's Network tab in Developer Tools for any 404 (Not Found) errors related to these model files.\n\n";
-            if (err.message) {
-              detailedErrorMessage += `Specific error reported by the system: ${err.message}`;
-            }
-            setError(detailedErrorMessage);
-            setStatusMessage("CRITICAL ERROR: Face models missing or inaccessible.");
-            setProgress(0);
-            toast({
-              title: 'Model Loading Error',
-              description: 'Critical face recognition models are missing from /public/models. Please add them and refresh.',
-              variant: 'destructive',
-              duration: 10000, // Show longer
-            });
-          }
-        };
+    if (isClient && !modelsLoaded && !error) { // Only attempt to load models if not already loaded and no other critical error
         loadModels();
     }
-  }, [isClient, toast]);
+  }, [isClient, modelsLoaded, error, loadModels]);
 
 
   const startVideo = useCallback(async () => {
-    if (!isClient || !videoRef.current || isVideoStreaming || !modelsLoaded) return;
+    if (!isClient || !videoRef.current || isVideoStreaming || !modelsLoaded || error) return; // Do not start if models not loaded or error exists
     setStatusMessage("Starting camera...");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -188,7 +195,7 @@ const AttendancePage: NextPage = () => {
       setIsVideoStreaming(false);
       toast({title: "Camera Error", description: "Could not access camera. Check permissions.", variant: "destructive"});
     }
-  }, [isClient, isVideoStreaming, modelsLoaded, toast]);
+  }, [isClient, isVideoStreaming, modelsLoaded, toast, error]);
 
 
   const stopVideo = useCallback(() => {
@@ -205,7 +212,7 @@ const AttendancePage: NextPage = () => {
        console.log("Face detection interval cleared on stopVideo.");
     }
      setDetectionStatus('idle');
-     if (!error) setStatusMessage("Camera stopped."); // Don't overwrite error messages
+     if (!error) setStatusMessage("Camera stopped.");
   }, [error]);
 
 
@@ -298,8 +305,8 @@ const AttendancePage: NextPage = () => {
    }, [employee, location, address, toast]);
 
     const handleAutoCapture = useCallback(async () => {
-        if (isCapturing || captureCooldownActive || !isVideoStreaming || !modelsLoaded) {
-            console.log("Auto-capture skipped:", {isCapturing, captureCooldownActive, isVideoStreaming, modelsLoaded});
+        if (isCapturing || captureCooldownActive || !isVideoStreaming || !modelsLoaded || error) {
+            console.log("Auto-capture skipped:", {isCapturing, captureCooldownActive, isVideoStreaming, modelsLoaded, error});
             return;
         }
 
@@ -311,11 +318,11 @@ const AttendancePage: NextPage = () => {
              console.error("Auto-capture failed: Could not get photo data.");
              setStatusMessage("Auto-capture failed. Photo could not be taken.");
         }
-    }, [isCapturing, captureCooldownActive, isVideoStreaming, modelsLoaded, capturePhoto, submitAttendance]);
+    }, [isCapturing, captureCooldownActive, isVideoStreaming, modelsLoaded, error, capturePhoto, submitAttendance]);
 
   const handleVideoPlay = useCallback(() => {
-    if (!isClient || !modelsLoaded || !videoRef.current || !canvasRef.current || isCapturing || captureCooldownActive) {
-      console.log("Conditions not met for starting face detection interval or capture active/cooldown.");
+    if (!isClient || !modelsLoaded || !videoRef.current || !canvasRef.current || isCapturing || captureCooldownActive || error) {
+      console.log("Conditions not met for starting face detection interval or capture active/cooldown/error present.");
       return;
     }
 
@@ -328,8 +335,8 @@ const AttendancePage: NextPage = () => {
     }
 
     intervalRef.current = setInterval(async () => {
-      if (videoRef.current && videoRef.current.videoWidth > 0 && canvasRef.current && !isCapturing && !captureCooldownActive && modelsLoaded) {
-        canvasRef.current.innerHTML = ""; // Clear previous drawings
+      if (videoRef.current && videoRef.current.videoWidth > 0 && canvasRef.current && !isCapturing && !captureCooldownActive && modelsLoaded && !error) {
+        canvasRef.current.innerHTML = "";
         const displaySize = {
           width: videoRef.current.videoWidth,
           height: videoRef.current.videoHeight,
@@ -342,34 +349,24 @@ const AttendancePage: NextPage = () => {
 
         const resizedDetections = faceapi.resizeResults(detections, displaySize);
         
-        // Optional: Draw detections for debugging - remove for production
-        // const context = canvasRef.current.getContext('2d');
-        // if (context) {
-        //    context.clearRect(0, 0, displaySize.width, displaySize.height); // Clear canvas
-        //    faceapi.draw.drawDetections(canvasRef.current, resizedDetections);
-        //    faceapi.draw.drawFaceLandmarks(canvasRef.current, resizedDetections);
-        // }
-
-
         if (resizedDetections.length > 0) {
             if (detectionStatus !== 'detected') {
                 setStatusMessage("Face detected. Hold still.");
                 setDetectionStatus('detected');
             }
-            const { detection } = resizedDetections[0]; // Assuming one face
+            const { detection } = resizedDetections[0];
             const box = detection.box;
             
-            // Basic alignment checks (can be refined)
             const centerX = box.x + box.width / 2;
             const videoCenterX = displaySize.width / 2;
             const sizeRatio = Math.min(box.width / displaySize.width, box.height / displaySize.height);
 
-            const isCentered = Math.abs(centerX - videoCenterX) < displaySize.width * 0.25; // Face center within 25% of video center
-            const isLargeEnough = sizeRatio > 0.20; // Face occupies at least 20% of frame width/height
+            const isCentered = Math.abs(centerX - videoCenterX) < displaySize.width * 0.25;
+            const isLargeEnough = sizeRatio > 0.20;
 
            if (isCentered && isLargeEnough) {
                 setStatusMessage("Face aligned. Capturing...");
-                await handleAutoCapture(); // This will trigger submitAttendance
+                await handleAutoCapture();
             } else if (!isLargeEnough) {
                  setStatusMessage("Please move closer to the camera.");
             } else if (!isCentered) {
@@ -392,13 +389,14 @@ const AttendancePage: NextPage = () => {
        }
      };
 
-  }, [isClient, modelsLoaded, isCapturing, captureCooldownActive, detectionStatus, handleAutoCapture]);
+  }, [isClient, modelsLoaded, isCapturing, captureCooldownActive, error, detectionStatus, handleAutoCapture]);
 
 
     const handleManualCapture = useCallback(async () => {
-        if (isCapturing || captureCooldownActive || !isVideoStreaming || !location || !address || !modelsLoaded) {
+        if (isCapturing || captureCooldownActive || !isVideoStreaming || !location || !address || !modelsLoaded || error) {
             let reason = "Cannot capture yet.";
-            if (isCapturing) reason = "Previous capture in progress.";
+            if (error) reason = "System error active. Cannot capture.";
+            else if (isCapturing) reason = "Previous capture in progress.";
             else if (captureCooldownActive) reason = "Please wait before capturing again.";
             else if (!isVideoStreaming) reason = "Camera not ready.";
             else if (!modelsLoaded) reason = "Face models not loaded. Cannot capture.";
@@ -416,7 +414,7 @@ const AttendancePage: NextPage = () => {
             toast({ title: 'Capture Failed', description: 'Could not capture photo from camera. Ensure camera is active.', variant: 'destructive' });
             setStatusMessage("Manual capture failed.");
         }
-    }, [isCapturing, captureCooldownActive, isVideoStreaming, location, address, modelsLoaded, capturePhoto, submitAttendance, toast]);
+    }, [isCapturing, captureCooldownActive, isVideoStreaming, location, address, modelsLoaded, error, capturePhoto, submitAttendance, toast]);
 
   const handleLogout = useCallback(() => {
     stopVideo();
@@ -426,19 +424,16 @@ const AttendancePage: NextPage = () => {
   }, [stopVideo, router, toast]);
 
   const handleTryAgain = () => {
-    setError(null); 
-    setIsLoading(true); 
-    setModelsLoaded(false); // Force model reload
+    setError(null);
+    setIsLoading(true);
+    setModelsLoaded(false); // Reset modelsLoaded to trigger reload attempt
     setProgress(0);
     setStatusMessage("Re-initializing...");
-    // Re-trigger initial data fetching and model loading by dependencies in useEffects
-    // For example, if fetchEmployeeData depends on isClient, just ensuring isClient is true
-    // and then the useEffect for models will run again.
-    // If specific re-fetch is needed:
+    
     if (isClient) {
       const uid = checkLoginStatus();
       if (uid && typeof uid === 'string' && uid.toLowerCase() !== 'admin') {
-        fetchEmployeeData(uid); // This will also trigger fetchLocationAndAddress
+        fetchEmployeeData(uid); // This will re-initiate data fetching and model loading
       } else {
         logoutUser();
         router.replace('/login');
@@ -447,7 +442,7 @@ const AttendancePage: NextPage = () => {
   };
 
 
-   if (!isClient) { // Show basic loading screen until client is determined
+   if (!isClient) {
        return (
            <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-100 dark:from-gray-800 dark:via-gray-900 dark:to-black p-4">
                 <Loader2 className="h-16 w-16 animate-spin text-primary mb-4" />
@@ -456,7 +451,7 @@ const AttendancePage: NextPage = () => {
        );
    }
    
-   if (isLoading && !error) { // Show detailed loading if not error state
+   if (isLoading && !error) { // Show loading only if no critical error
        return (
            <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-100 dark:from-gray-800 dark:via-gray-900 dark:to-black p-4">
                 <Loader2 className="h-16 w-16 animate-spin text-primary mb-4" />
@@ -467,11 +462,12 @@ const AttendancePage: NextPage = () => {
    }
 
 
-   if (error) { // Prioritize showing error state
+   if (error) { // This is the main error display screen
        return (
            <div className="flex flex-col items-center justify-center min-h-screen bg-red-50 dark:bg-red-900/20 p-4">
                <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
                <h2 className="text-2xl font-semibold text-destructive mb-2">An Error Occurred</h2>
+               {/* Ensure this <p> tag correctly displays the multi-line 'error' state variable */}
                <p className="text-center text-destructive/80 mb-6 max-w-md whitespace-pre-line">{error}</p>
                <Button onClick={handleTryAgain} variant="destructive" className="mb-2">
                    Try Again
@@ -536,18 +532,19 @@ const AttendancePage: NextPage = () => {
                className="absolute top-0 left-0 w-full h-full transform scale-x-[-1]"
                style={{ maxHeight: 'inherit', objectFit: 'contain' }}
              />
-             {(!modelsLoaded || (!isVideoStreaming && modelsLoaded)) && !error && ( // Show loader if models not loaded OR if models loaded but video not streaming AND no major error
+             {(!modelsLoaded || (!isVideoStreaming && modelsLoaded)) && !error && (
                <div className="absolute inset-0 flex flex-col items-center justify-center bg-muted/50 dark:bg-muted/30 rounded-md p-4 text-center">
                  <Loader2 className="h-12 w-12 animate-spin text-primary mb-3" />
                  <p className="text-muted-foreground text-sm">{statusMessage}</p>
                </div>
              )}
-             {error && (error.includes("camera") || error.includes("model")) && ( // Show specific error overlay for camera/model issues if an error exists
+             {/* This specific error display for camera/model might be redundant if the main 'if (error)' block handles it well */}
+             {/* {error && (error.includes("camera") || error.includes("model")) && ( 
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-destructive/10 dark:bg-destructive/20 rounded-md p-4 text-center">
                     <AlertTriangle className="h-10 w-10 text-destructive mb-2"/>
                     <p className="text-destructive text-sm whitespace-pre-line">{error.startsWith("Failed to load face recognition models") ? "Model loading failed. Check setup." : "Camera permission or model loading issue."}</p>
                 </div>
-             )}
+             )} */}
           </CardContent>
           <CardFooter className="p-3 md:p-4 border-t bg-muted/40 dark:bg-muted/25 rounded-b-xl">
              <div className="flex items-center justify-between w-full gap-2">
@@ -555,12 +552,12 @@ const AttendancePage: NextPage = () => {
                     {isCapturing && <Loader2 className="h-5 w-5 animate-spin text-primary flex-shrink-0" />}
                     {!isCapturing && detectionStatus === 'detected' && <CheckCircle className="h-5 w-5 text-green-500 flex-shrink-0" />}
                     {!isCapturing && detectionStatus === 'no_face' && <XCircle className="h-5 w-5 text-destructive flex-shrink-0" />}
-                    {!isCapturing && (detectionStatus === 'detecting' || (modelsLoaded && !isVideoStreaming)) && <Loader2 className="h-5 w-5 animate-spin text-primary flex-shrink-0" />}
+                    {!isCapturing && (detectionStatus === 'detecting' || (modelsLoaded && !isVideoStreaming && !error)) && <Loader2 className="h-5 w-5 animate-spin text-primary flex-shrink-0" />}
                     <p className="text-xs sm:text-sm text-muted-foreground flex-1 truncate" title={statusMessage}>{statusMessage}</p>
                 </div>
                   <Button
                      onClick={handleManualCapture}
-                     disabled={isCapturing || captureCooldownActive || !isVideoStreaming || !location || !address || !!error || !modelsLoaded}
+                     disabled={!!error || isCapturing || captureCooldownActive || !isVideoStreaming || !location || !address || !modelsLoaded}
                      size="sm"
                      className="shadow-md flex-shrink-0 px-3 py-1.5 sm:px-4 sm:py-2"
                      aria-label="Mark attendance manually"
@@ -569,7 +566,7 @@ const AttendancePage: NextPage = () => {
                      Manual
                   </Button>
              </div>
-             {(isCapturing || (isLoading && progress > 0 && progress < 100)) && (
+             {(isCapturing || (isLoading && progress > 0 && progress < 100 && !error)) && (
                <Progress value={isCapturing ? progress : (isLoading ? progress : 0)} className="w-full mt-2 h-1.5" />
              )}
           </CardFooter>
@@ -578,14 +575,14 @@ const AttendancePage: NextPage = () => {
         <Card className="shadow-xl flex flex-col bg-card/90 backdrop-blur-md dark:bg-card/85 border border-border/60 rounded-xl">
           <CardHeader>
              <CardTitle className="text-primary">Employee Details</CardTitle>
-             {employee ? (
+             {employee && !error ? (
                <CardDescription>Welcome, {employee.name}! Your attendance will be marked for E Wheels and Logistics.</CardDescription>
              ) : (
-                <CardDescription>Loading your details...</CardDescription>
+                <CardDescription>{error ? "Error loading details." : "Loading your details..."}</CardDescription>
              )}
           </CardHeader>
           <CardContent className="flex-grow space-y-3 sm:space-y-4 text-sm p-4 md:p-6">
-            {employee ? (
+            {employee && !error ? (
               <>
                 <div className="flex justify-between"><span><strong>ID:</strong> {employee.employeeId}</span> <span><strong>Phone:</strong> {employee.phone}</span></div>
                 <p><strong>Shift:</strong> {employee.shiftTiming || 'N/A'}</p>
@@ -603,33 +600,27 @@ const AttendancePage: NextPage = () => {
                         ) : (
                            <div className="flex items-center text-muted-foreground italic mt-1">
                                <Loader2 className="h-4 w-4 animate-spin mr-2"/>
-                               <span>{location ? "Fetching address..." : (modelsLoaded && employee ? "Acquiring location..." : "Waiting for setup...")}</span>
+                               <span>{statusMessage.includes("location") || statusMessage.includes("address") ? statusMessage : (modelsLoaded && employee ? "Acquiring location/address..." : "Waiting for setup...")}</span>
                            </div>
                         )}
+                         {/* Redundant if main error block handles location errors
                          {error && (error.includes("location") || error.includes("address")) && !error.includes("model") && !error.includes("camera") && (
                             <p className="text-destructive italic text-xs sm:text-sm mt-1 whitespace-pre-line">{error}</p>
-                         )}
+                         )} */}
                     </div>
                  </div>
               </>
             ) : (
-               !error && // Only show this loader if there's no major error screen
+               !error && // Only show loader if no general error
                <div className="flex items-center justify-center h-full">
                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
                  <p className="ml-2 text-muted-foreground">Loading details...</p>
                </div>
             )}
-            {/* Don't show this if a major error is already displayed on the full screen */}
-            {/* {error && !employee && !error.includes("model") && !error.includes("camera") && (
-                <div className="flex flex-col items-center justify-center h-full text-center">
-                    <AlertTriangle className="h-8 w-8 text-destructive mb-2"/>
-                    <p className="text-destructive text-sm max-w-md">{error}</p>
-                </div>
-            )} */}
           </CardContent>
             <CardFooter className="p-3 md:p-4 border-t bg-muted/40 dark:bg-muted/25 rounded-b-xl">
                 <p className="text-xs text-muted-foreground text-center w-full">
-                     {captureCooldownActive ? `Cooldown: Mark again in ${Math.ceil(CAPTURE_COOLDOWN/1000)}s.` : (isCapturing ? "Processing..." : (modelsLoaded && isVideoStreaming ? "Ensure location is accurate. Auto-capture is on." : "System initializing..."))}
+                     {error ? "System error. Please try again." : (captureCooldownActive ? `Cooldown: Mark again in ${Math.ceil(CAPTURE_COOLDOWN/1000)}s.` : (isCapturing ? "Processing..." : (modelsLoaded && isVideoStreaming ? "Ensure location is accurate. Auto-capture is on." : "System initializing...")))}
                 </p>
             </CardFooter>
         </Card>
