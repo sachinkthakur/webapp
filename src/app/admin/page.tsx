@@ -33,9 +33,9 @@ const AdminPage: NextPage = () => {
 
   useEffect(() => {
     if (isClient) {
-      const loggedInUser = checkLoginStatus();
+      const loggedInUser = checkLoginStatus(); // Returns 'admin' or other ID, or null
       console.log("Admin page: Auth check. LoggedInUser:", loggedInUser);
-      if (typeof loggedInUser === 'string' && loggedInUser.toLowerCase() === 'admin') {
+      if (typeof loggedInUser === 'string' && loggedInUser === 'admin') { // Strict check
         setIsAdminAuthenticated(true);
       } else {
         setIsAdminAuthenticated(false);
@@ -47,7 +47,7 @@ const AdminPage: NextPage = () => {
   }, [isClient, router, toast]);
 
   const fetchRecords = useCallback(async (range?: DateRange) => {
-    if (!isClient) return;
+    if (!isClient || !isAdminAuthenticated) return; // Added isAdminAuthenticated check
 
     setIsLoading(true);
     setError(null);
@@ -82,7 +82,7 @@ const AdminPage: NextPage = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [toast, isClient]);
+  }, [toast, isClient, isAdminAuthenticated]);
 
   useEffect(() => {
     if (isClient && isAdminAuthenticated) {
@@ -94,13 +94,13 @@ const AdminPage: NextPage = () => {
       setDateRange(initialRange);
       fetchRecords(initialRange);
     }
-  }, [isClient, isAdminAuthenticated, fetchRecords, setDateRange]);
+  }, [isClient, isAdminAuthenticated, fetchRecords]); // Removed setDateRange to avoid potential re-runs if it's memoized
 
 
   const handleDateChange = useCallback((range: DateRange | undefined) => {
     console.log("Date range selected:", range);
     setDateRange(range);
-    if (isAdminAuthenticated) { // Only fetch if authenticated
+    if (isAdminAuthenticated) { 
         fetchRecords(range);
     }
   }, [fetchRecords, isAdminAuthenticated]);
@@ -183,7 +183,7 @@ const AdminPage: NextPage = () => {
 
   const memoizedRecords = useMemo(() => attendanceRecords, [attendanceRecords]);
 
-  if (!isClient || (isClient && !isAdminAuthenticated && isLoading)) { // Show loader if not client or not yet authenticated by client check
+  if (!isClient || (isClient && !isAdminAuthenticated && isLoading)) { 
     return (
       <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-100 via-indigo-100 to-purple-200 dark:from-gray-800 dark:via-gray-900 dark:to-black">
         <Loader2 className="h-16 w-16 animate-spin text-primary" />
@@ -191,8 +191,6 @@ const AdminPage: NextPage = () => {
     );
   }
 
-  // If isClient is true, but isAdminAuthenticated is false, the auth useEffect would have redirected.
-  // This rendering path is for when isAdminAuthenticated is true.
 
   return (
     <div className="relative flex flex-col min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-100 dark:from-gray-800 dark:via-gray-900 dark:to-black p-4 md:p-8 overflow-hidden">
@@ -252,7 +250,7 @@ const AdminPage: NextPage = () => {
           )}
 
           <div className="mt-4">
-            {isLoading && isAdminAuthenticated ? ( // Only show loading records if authenticated and actually loading
+            {isLoading && isAdminAuthenticated ? ( 
               <div className="flex flex-col justify-center items-center h-64 text-center">
                 <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
                 <p className="text-muted-foreground">Loading records for the selected period...</p>

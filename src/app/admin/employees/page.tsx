@@ -51,7 +51,7 @@ const EmployeeManagementPage: NextPage = () => {
   }, []);
 
   const fetchEmployees = useCallback(async () => {
-    if (!isClient) return;
+    if (!isClient || !isAdminAuthenticated) return; // Added isAdminAuthenticated check
 
     setIsLoading(true);
     setError(null);
@@ -66,13 +66,13 @@ const EmployeeManagementPage: NextPage = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [toast, isClient]);
+  }, [toast, isClient, isAdminAuthenticated]);
 
   useEffect(() => {
     if (isClient) {
-      const loggedInUser = checkLoginStatus();
+      const loggedInUser = checkLoginStatus(); // Returns 'admin' or other ID, or null
       console.log("Employee Management page: Auth check. LoggedInUser:", loggedInUser);
-      if (typeof loggedInUser === 'string' && loggedInUser.toLowerCase() === 'admin') {
+      if (typeof loggedInUser === 'string' && loggedInUser === 'admin') { // Strict check
         setIsAdminAuthenticated(true);
       } else {
         setIsAdminAuthenticated(false);

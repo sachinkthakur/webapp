@@ -51,15 +51,22 @@ export const authenticateUser = async (userId: string, password?: string): Promi
 /**
  * Checks if a user is currently logged in based on localStorage.
  * NOTE: Inherently client-side.
- * @returns string | null - The logged-in user ID (trimmed) or null if not logged in or empty.
+ * @returns string | null - The logged-in user ID (trimmed, and 'admin' is lowercased) or null if not logged in or empty.
  */
 export const checkLoginStatus = (): string | null => {
    if (typeof window !== 'undefined') {
      try {
-       const loggedInUser = localStorage.getItem('loggedInUser');
-       // Trim the retrieved value and ensure it's not an empty string.
-       if (loggedInUser && loggedInUser.trim() !== '') {
-         return loggedInUser.trim(); // Return the trimmed, non-empty string
+       let loggedInUser = localStorage.getItem('loggedInUser');
+       if (loggedInUser) {
+         loggedInUser = loggedInUser.trim();
+         // Normalize to lowercase 'admin' on retrieval if it's an admin user
+         if (loggedInUser.toLowerCase() === 'admin') {
+           return 'admin'; 
+         }
+         // Return other non-empty user IDs as is
+         if (loggedInUser !== '') {
+           return loggedInUser;
+         }
        }
        return null; // Return null if not found, null, or empty string after trim
      } catch (error) {
@@ -94,7 +101,7 @@ export const logoutUser = (): void => {
 export const storeLoginSession = (userId: string): void => {
     if (typeof window !== 'undefined') {
       try {
-        let valueToStore = typeof userId === 'string' ? userId.trim() : ''; // Trim and ensure it's a string
+        let valueToStore = typeof userId === 'string' ? userId.trim() : ''; 
 
         if (valueToStore.toLowerCase() === 'admin') {
           valueToStore = 'admin'; // Standardize to lowercase 'admin' for storage
@@ -107,4 +114,3 @@ export const storeLoginSession = (userId: string): void => {
       }
     }
 };
-

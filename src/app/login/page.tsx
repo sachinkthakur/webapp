@@ -19,14 +19,13 @@ const loginSchema = z.object({
   userId: z.string().min(1, 'User ID / Phone Number is required'),
   password: z.string().optional(),
 }).refine(data => {
-    // If userId is 'admin' (case-insensitive), password must exist and be non-empty.
-    if (typeof data.userId === 'string' && data.userId.toLowerCase().trim() === 'admin') { // Trim during refine check as well
+    if (typeof data.userId === 'string' && data.userId.trim().toLowerCase() === 'admin') {
         return !!data.password && data.password.length > 0;
     }
-    return true; // For non-admin users, password can be empty/optional as per schema.
+    return true;
 }, {
     message: 'Password is required for admin login',
-    path: ['password'], // Apply error to password field
+    path: ['password'],
 });
 
 
@@ -47,16 +46,13 @@ const LoginPage: NextPage = () => {
     if (isClient) {
       const loggedInUser = checkLoginStatus();
       console.log("Login page: Checked login status on mount:", loggedInUser);
-      if (loggedInUser && typeof loggedInUser === 'string') { // Ensures it's a non-empty string
-        if (loggedInUser.toLowerCase() === 'admin') {
-          // If admin is already logged in, redirect to admin page
+      if (loggedInUser && typeof loggedInUser === 'string') { 
+        if (loggedInUser === 'admin') { // Check against lowercase 'admin'
           router.replace('/admin');
         } else {
-          // If an employee is logged in, redirect to employee page
           router.replace('/');
         }
       }
-      // If no one is logged in (null or not a string), stay on login page.
     }
   }, [router, isClient]);
 
@@ -67,18 +63,16 @@ const LoginPage: NextPage = () => {
       userId: '',
       password: '',
     },
-    mode: 'onChange', // Validate on change for better UX
+    mode: 'onChange', 
   });
 
    const watchedUserId = form.watch('userId');
 
    useEffect(() => {
-       // Show password field only if userId is 'admin' (case-insensitive and trimmed)
        if (typeof watchedUserId === 'string') {
            const trimmedUserId = watchedUserId.trim().toLowerCase();
            setShowPassword(trimmedUserId === 'admin');
            if (trimmedUserId !== 'admin') {
-               // Clear password if userId changes from admin to something else
                form.setValue('password', ''); 
            }
        } else {
@@ -94,31 +88,34 @@ const LoginPage: NextPage = () => {
 
     const rawUserId = data.userId;
     const rawPassword = data.password;
-
-    // Trim the userId before authentication and storage
     const cleanUserId = typeof rawUserId === 'string' ? rawUserId.trim() : '';
 
     try {
-      const isAuthenticated = await authenticateUser(cleanUserId, rawPassword); // Use cleaned ID for auth
+      const isAuthenticated = await authenticateUser(cleanUserId, rawPassword);
       console.log('Authentication result for cleanUserId "', cleanUserId, '":', isAuthenticated);
 
       if (isAuthenticated) {
+        let sessionUser = cleanUserId;
+        if (cleanUserId.toLowerCase() === 'admin') {
+          sessionUser = 'admin'; // Ensure 'admin' is used for session and routing logic
+        }
+        
         toast({
           title: 'Login Successful',
-          description: `Welcome, ${cleanUserId}! Redirecting...`, // Use cleaned ID for display
+          description: `Welcome, ${sessionUser}! Redirecting...`, 
         });
 
         if (typeof window !== 'undefined') {
-            storeLoginSession(cleanUserId); // Store the CLEANED userId
-            console.log('Stored session for:', cleanUserId);
+            storeLoginSession(sessionUser); 
+            console.log('Stored session for:', sessionUser);
         }
 
-        if (cleanUserId.toLowerCase() === 'admin') {
+        if (sessionUser === 'admin') {
           console.log('Redirecting admin to /admin');
-          router.push('/admin');
+          router.replace('/admin'); // Use replace for better history
         } else {
           console.log('Redirecting employee to /');
-          router.push('/');
+          router.replace('/'); // Use replace for better history
         }
       } else {
          toast({
@@ -141,7 +138,6 @@ const LoginPage: NextPage = () => {
 
 
   if (!isClient) {
-    // Basic loading state to prevent flash of unstyled content or hydration errors
     return (
         <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-blue-700 via-indigo-700 to-purple-800 dark:from-gray-800 dark:via-gray-900 dark:to-black">
              <Loader2 className="h-16 w-16 animate-spin text-white" />
@@ -164,7 +160,6 @@ const LoginPage: NextPage = () => {
       <Card className="w-full max-w-sm z-10 shadow-2xl bg-card/95 backdrop-blur-sm dark:bg-card/90 border border-border/50 rounded-xl">
         <CardHeader className="text-center space-y-2 pt-8">
            <div className="mx-auto h-16 w-16 text-primary dark:text-primary-foreground">
-            {/* Logo Icon - A simple placeholder, replace with actual SVG if available */}
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-full h-full">
                <path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.035-.84-1.875-1.875-1.875h-.75ZM9.75 8.625c0-1.035.84-1.875 1.875-1.875h.75c1.035 0 1.875.84 1.875 1.875V21.75c0 1.035-.84 1.875-1.875 1.875h-.75c-1.035 0-1.875-.84-1.875-1.875V8.625ZM3 13.125c0-1.035.84-1.875 1.875-1.875h.75c1.035 0 1.875.84 1.875 1.875V21.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 0 1 3 21.75V13.125Z" />
             </svg>
