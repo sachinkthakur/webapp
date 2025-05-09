@@ -37,7 +37,7 @@ const EmployeeManagementPage: NextPage = () => {
   const router = useRouter();
   const { toast } = useToast();
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [isLoading, setIsLoading] = useState(true); // For data fetching, not auth
+  const [isLoading, setIsLoading] = useState(true); 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -51,22 +51,34 @@ const EmployeeManagementPage: NextPage = () => {
     setIsClient(true);
   }, []);
 
-  useEffect(() => {
+ useEffect(() => {
     if (isClient) {
-      const status = checkLoginStatus();
-      console.log("EmployeeManagementPage: Auth Check. Current login status from checkLoginStatus():", status);
+      const currentLoginStatus = checkLoginStatus();
+      console.log(`EmployeeManagementPage: Auth Check. Current login status from checkLoginStatus(): "${currentLoginStatus}"`);
 
-      if (status === 'admin') {
+      if (currentLoginStatus === 'admin') {
         console.log("EmployeeManagementPage: User IS admin. Setting isAdminAuthenticated to true.");
         setIsAdminAuthenticated(true);
       } else {
-        console.log("EmployeeManagementPage: User IS NOT admin or status is unexpected. Status:", status, ". Redirecting to login.");
-        setIsAdminAuthenticated(false); // Ensure this is set
-        toast({ title: 'Unauthorized Access', description: 'You must be an administrator to view this page. Redirecting...', variant: 'destructive' });
-        logoutUser(); // This clears the session
+        setIsAdminAuthenticated(false);
+        let unauthorizedReason = 'Unknown reason for unauthorized access.';
+        if (currentLoginStatus) { 
+          unauthorizedReason = `User "${currentLoginStatus}" is not an administrator.`;
+        } else { 
+          unauthorizedReason = 'No user is logged in or session is invalid.';
+        }
+        console.log(`EmployeeManagementPage: User IS NOT admin. Status: "${currentLoginStatus}". Reason: ${unauthorizedReason}. Redirecting to login.`);
+        
+        toast({ 
+          title: 'Unauthorized Access', 
+          description: `${unauthorizedReason} You must be an administrator to view this page. Redirecting...`, 
+          variant: 'destructive' 
+        });
+        
+        logoutUser(); 
         router.replace('/login');
       }
-      setAuthCheckCompleted(true); // Mark that the auth check has run
+      setAuthCheckCompleted(true); 
     }
   }, [isClient, router, toast]);
 
@@ -241,8 +253,8 @@ const EmployeeManagementPage: NextPage = () => {
         data-ai-hint="office background"
         src="https://picsum.photos/seed/employeebg/1920/1080"
         alt="Employee background"
-        layout="fill"
-        objectFit="cover"
+        fill
+        style={{objectFit:"cover"}}
         quality={60}
         className="absolute inset-0 z-0 opacity-10 dark:opacity-5"
       />
@@ -376,7 +388,7 @@ const EmployeeManagementPage: NextPage = () => {
               <p className="text-sm text-destructive">{error}</p>
             </div>
           )}
-          {isLoading && isAdminAuthenticated ? ( // Show data loading spinner only if authenticated
+          {isLoading && isAdminAuthenticated ? ( 
             <div className="flex flex-col justify-center items-center h-64 text-center">
               <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
               <p className="text-muted-foreground">Loading employee list...</p>

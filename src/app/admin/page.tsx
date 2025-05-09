@@ -20,7 +20,7 @@ const AdminPage: NextPage = () => {
   const router = useRouter();
   const { toast } = useToast();
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true); // For data fetching, not auth
+  const [isLoading, setIsLoading] = useState(true); 
   const [isDownloading, setIsDownloading] = useState(false);
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
@@ -34,25 +34,36 @@ const AdminPage: NextPage = () => {
 
   useEffect(() => {
     if (isClient) {
-      const status = checkLoginStatus();
-      console.log("AdminPage: Auth Check. Current login status from checkLoginStatus():", status);
+      const currentLoginStatus = checkLoginStatus();
+      console.log(`AdminPage: Auth Check. Current login status from checkLoginStatus(): "${currentLoginStatus}"`);
 
-      if (status === 'admin') {
+      if (currentLoginStatus === 'admin') {
         console.log("AdminPage: User IS admin. Setting isAdminAuthenticated to true.");
         setIsAdminAuthenticated(true);
       } else {
-        console.log("AdminPage: User IS NOT admin or status is unexpected. Status:", status, ". Redirecting to login.");
-        setIsAdminAuthenticated(false); // Ensure this is set
-        toast({ title: 'Unauthorized Access', description: 'You must be an administrator to view this page. Redirecting...', variant: 'destructive' });
-        logoutUser(); // This clears the session
+        setIsAdminAuthenticated(false);
+        let unauthorizedReason = 'Unknown reason for unauthorized access.';
+        if (currentLoginStatus) { 
+          unauthorizedReason = `User "${currentLoginStatus}" is not an administrator.`;
+        } else { 
+          unauthorizedReason = 'No user is logged in or session is invalid.';
+        }
+        console.log(`AdminPage: User IS NOT admin. Status: "${currentLoginStatus}". Reason: ${unauthorizedReason}. Redirecting to login.`);
+        
+        toast({ 
+          title: 'Unauthorized Access', 
+          description: `${unauthorizedReason} You must be an administrator to view this page. Redirecting...`, 
+          variant: 'destructive' 
+        });
+        
+        logoutUser(); 
         router.replace('/login');
       }
-      setAuthCheckCompleted(true); // Mark that the auth check has run
+      setAuthCheckCompleted(true); 
     }
   }, [isClient, router, toast]);
 
   const fetchRecords = useCallback(async (range?: DateRange) => {
-    // Guard against running if not authenticated or auth check not complete
     if (!isClient || !authCheckCompleted || !isAdminAuthenticated) {
       console.log("AdminPage: fetchRecords skipped. Conditions: isClient:", isClient, "authCheckCompleted:", authCheckCompleted, "isAdminAuthenticated:", isAdminAuthenticated);
       return;
@@ -91,7 +102,7 @@ const AdminPage: NextPage = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [toast, isClient, authCheckCompleted, isAdminAuthenticated]); // Added authCheckCompleted
+  }, [toast, isClient, authCheckCompleted, isAdminAuthenticated]); 
 
   useEffect(() => {
     if (isClient && authCheckCompleted && isAdminAuthenticated) {
@@ -100,9 +111,8 @@ const AdminPage: NextPage = () => {
       const sevenDaysAgo = new Date(today);
       sevenDaysAgo.setDate(today.getDate() - 7);
       const initialRange = { from: sevenDaysAgo, to: today };
-      setDateRange(initialRange); // This will trigger handleDateChange which calls fetchRecords
-                                   // OR directly call fetchRecords if setDateRange doesn't trigger it via its own effect
-      fetchRecords(initialRange); // Explicitly call fetchRecords after setting initial range
+      setDateRange(initialRange); 
+      fetchRecords(initialRange); 
     } else if (isClient && authCheckCompleted && !isAdminAuthenticated) {
       console.log("AdminPage: Auth check complete, user not authenticated. Data fetching skipped.");
     }
@@ -112,7 +122,6 @@ const AdminPage: NextPage = () => {
   const handleDateChange = useCallback((range: DateRange | undefined) => {
     console.log("AdminPage: Date range selected:", range);
     setDateRange(range);
-    // Fetch records only if authenticated and auth check is done
     if (isClient && authCheckCompleted && isAdminAuthenticated) {
         fetchRecords(range);
     } else {
@@ -208,9 +217,7 @@ const AdminPage: NextPage = () => {
   }
 
   if (!isAdminAuthenticated) {
-    // This state should ideally be brief as the auth useEffect handles redirection.
-    // Provides a fallback message if redirection is delayed.
-    return (
+     return (
          <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-red-100 to-red-200 dark:from-gray-800 dark:to-black">
             <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
             <p className="text-lg text-destructive">Unauthorized. Redirecting to login...</p>
@@ -218,15 +225,14 @@ const AdminPage: NextPage = () => {
     );
   }
 
-  // Render page content only if authenticated
   return (
     <div className="relative flex flex-col min-h-screen bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-100 dark:from-gray-800 dark:via-gray-900 dark:to-black p-4 md:p-8 overflow-hidden">
       <Image
         data-ai-hint="office background"
         src="https://picsum.photos/seed/adminbg/1920/1080"
         alt="Admin background"
-        layout="fill"
-        objectFit="cover"
+        fill
+        style={{objectFit:"cover"}}
         quality={60}
         className="absolute inset-0 z-0 opacity-10 dark:opacity-5"
       />
