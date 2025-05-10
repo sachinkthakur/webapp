@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast'; 
 import { getCurrentPosition, getAddressFromCoordinates, GeolocationError } from '@/services/geo-location';
 import { saveAttendance, getEmployeeById, Employee } from '@/services/attendance';
 import { checkLoginStatus, logoutUser } from '@/services/auth';
@@ -138,35 +138,34 @@ const AttendancePage: NextPage = () => {
         setProgress(60);
       } catch (error: any) {
         console.error('AttendancePage: Error loading face recognition models:', error);
-        let detailedErrorMessage = 'CRITICAL: Face models failed to load. Auto-capture is disabled.\n\n';
+        let detailedErrorMessage = 'CRITICAL: Face models failed to load.\n\n';
         let failedUrlPart = '';
-        if (error.message) {
-            const urlMatch = String(error.message).match(/from url: (https?:\/\/[^\s]+)/);
-            if (urlMatch && urlMatch[1]) {
-                failedUrlPart = `(e.g., failed to fetch: ${urlMatch[1]})`;
-            }
+        const errorMessageString = String(error.message || 'Unknown error.');
+
+        const urlMatch = errorMessageString.match(/from url: (https?:\/\/[^\s]+)/);
+        if (urlMatch && urlMatch[1]) {
+            failedUrlPart = `(e.g., failed to fetch: ${urlMatch[1]})`;
         }
 
-        if (error.message && String(error.message).toLowerCase().includes('failed to fetch')) {
-            detailedErrorMessage += `REASON: The server reported a "404 Not Found" error when trying to fetch model files ${failedUrlPart}. This means the model files are missing OR THE SERVER NEEDS A RESTART after adding them.\n\n`;
+        if (errorMessageString.toLowerCase().includes('failed to fetch') || errorMessageString.includes('404')) {
+            detailedErrorMessage += `REASON: The server reported a "404 Not Found" error when trying to fetch model files ${failedUrlPart}. This usually means the model files are missing OR THE SERVER NEEDS A RESTART after adding them.\n\n`;
         } else {
-            detailedErrorMessage += `DETAILS: ${error.message || 'Unknown error.'}\n\n`;
+            detailedErrorMessage += `DETAILS: ${errorMessageString}\n\n`;
         }
         detailedErrorMessage += "ACTION REQUIRED (Please follow carefully):\n";
-        detailedErrorMessage += "1. Ensure you have downloaded ALL the necessary face-api.js model files (e.g., .json manifest files AND .weights files for EACH model - tinyFaceDetector, faceLandmark68Net, faceRecognitionNet, faceExpressionNet).\n";
-        detailedErrorMessage += "2. In your project, find the 'public' folder. Create a subfolder named 'models' (all lowercase) INSIDE 'public'. The path should be `public/models/`.\n";
-        detailedErrorMessage += "3. Place ALL downloaded model files directly into this `public/models/` folder. Do NOT put them in sub-subfolders.\n";
-        detailedErrorMessage += "4. CRUCIAL: After placing the files, you MUST RESTART your development server (e.g., stop 'npm run dev' and run it again). If deployed, ensure the deployment includes these files and the server is restarted/updated.\n";
-        detailedErrorMessage += "5. If the error persists, double-check file names in `public/models/` for typos and ensure all parts of each model (manifests, shards/weights) are present. Verify the server is correctly serving static files from the 'public' directory.\n";
+        detailedErrorMessage += "1. Ensure you have downloaded ALL the necessary face-api.js model files (e.g., .json manifest files AND .weights or shard files for EACH model - tinyFaceDetector, faceLandmark68Net, faceRecognitionNet, faceExpressionNet).\n";
+        detailedErrorMessage += "2. In your project, verify the 'public' folder exists at the root. Inside 'public', ensure there is a subfolder named 'models' (all lowercase). The path should be `public/models/`.\n";
+        detailedErrorMessage += "3. Confirm ALL downloaded model files are placed directly into this `public/models/` folder. Do NOT put them in sub-subfolders.\n";
+        detailedErrorMessage += "4. CRUCIAL: After placing/verifying the files, you MUST RESTART your development server (e.g., stop 'npm run dev' and run it again). If deployed, ensure the deployment includes these files correctly under the 'public/models' path and the server instance is restarted/updated.\n";
+        detailedErrorMessage += "5. If the error persists, double-check file names in `public/models/` for typos and ensure all parts of each model (manifests, shards/weights) are present. Verify the server is correctly serving static files from the 'public' directory by trying to access one of the model manifest files directly in your browser (e.g., your-app-url.com/models/tiny_face_detector_model-weights_manifest.json).\n";
         
         setModelsLoadedError(detailedErrorMessage);
-        // Update status bar message to be less verbose, main detail is in camera feed.
         setStatusMessage(`Error: Face models failed. See details in camera feed area.`); 
         toast({
           title: 'CRITICAL: Face Models Missing/Error!',
           description: "Face models could not be loaded. The camera feed area shows detailed instructions. Ensure models are in 'public/models' and server was restarted if files were added recently.",
           variant: 'destructive',
-          duration: 90000, // Longer duration for critical error
+          duration: 90000, 
         });
       } finally {
         setModelsLoading(false);
@@ -204,15 +203,49 @@ const AttendancePage: NextPage = () => {
       try {
         console.log("AttendancePage: Calling navigator.mediaDevices.getUserMedia.");
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+        
+        stream.getVideoTracks().forEach(track => {
+          track.onended = () => {
+            console.warn('AttendancePage: Video track ended unexpectedly.');
+            setHasCameraPermission(false);
+            setStatusMessage("Error: Camera stream ended. Please refresh or check camera.");
+            toast({ title: "Camera Stream Ended", description: "The camera connection was lost.", variant: "destructive" });
+          };
+        });
+
         if (videoRef.current) {
+          console.log("AttendancePage: videoRef.current IS available. Setting srcObject.");
           videoRef.current.srcObject = stream;
+           console.log("AttendancePage: videoRef.current.srcObject after setting:", videoRef.current.srcObject ? 'Exists' : 'null');
+
           videoRef.current.onloadedmetadata = () => {
-            videoRef.current?.play().catch(playError => {
-              console.error("Error playing video stream:", playError);
+            console.log("AttendancePage: onloadedmetadata fired for video.");
+            videoRef.current?.play().then(() => {
+                console.log("AttendancePage: Video playback started successfully via onloadedmetadata.");
+            }).catch(playError => {
+              console.error("AttendancePage: Error playing video stream from onloadedmetadata:", playError);
               setStatusMessage("Error: Could not start camera video.");
-              toast({ title: "Camera Error", description: "Could not start camera video.", variant: "destructive" });
+              toast({ title: "Camera Error", description: `Could not start camera video: ${playError.message}`, variant: "destructive" });
             });
           };
+          // Also attempt to play directly.
+          videoRef.current.play().then(() => {
+            console.log("AttendancePage: Video playback started successfully via direct play().");
+          }).catch(playError => {
+            // Not necessarily an error if onloadedmetadata handles it, but log for debugging.
+            if (videoRef.current?.readyState && videoRef.current.readyState >= HTMLMediaElement.HAVE_METADATA) {
+                 console.error('AttendancePage: Error playing video stream directly (readyState suggests metadata available):', playError);
+            } else {
+                console.warn('AttendancePage: Direct video.play() failed (may resolve with onloadedmetadata):', playError.name, playError.message);
+            }
+          });
+
+        } else {
+           console.error("AttendancePage: videoRef.current IS NULL when trying to set srcObject.");
+           setHasCameraPermission(false);
+           setStatusMessage("Error: Camera component not ready.");
+           toast({ title: 'Internal Error', description: 'Camera component not ready.', variant: 'destructive'});
+           return;
         }
         setHasCameraPermission(true);
         setStatusMessage("Camera access granted.");
@@ -501,10 +534,27 @@ const AttendancePage: NextPage = () => {
         toast({title: "Models Error", description: `Face models failed. Cannot capture. Please fix model loading issue (see message above).`, variant: "destructive"});
         return;
     }
-    if (hasCameraPermission !== true || !videoRef.current?.srcObject) {
-        toast({title: "Camera Issue", description: "Camera not ready or permission denied.", variant: "warning"});
+    
+    // Detailed check for camera readiness
+    let cameraProblem = null;
+    if (hasCameraPermission !== true) cameraProblem = "Camera permission not granted.";
+    else if (!videoRef.current) cameraProblem = "Video element not ready.";
+    else if (!videoRef.current.srcObject) cameraProblem = "Camera stream not active.";
+    else if (videoRef.current.paused || videoRef.current.ended || videoRef.current.readyState < 3) cameraProblem = "Camera stream not playing or ready.";
+
+    if (cameraProblem) {
+        console.warn("AttendancePage: Manual capture PRE-FLIGHT CHECK FAILED (Camera).");
+        console.warn(`  - Problem: ${cameraProblem}`);
+        console.warn(`  - hasCameraPermission: ${hasCameraPermission}`);
+        if (videoRef.current) {
+          console.warn(`  - videoRef.current.srcObject: ${videoRef.current.srcObject ? 'Exists' : 'null'}`);
+          console.warn(`  - videoRef.current.readyState: ${videoRef.current.readyState}`);
+          console.warn(`  - videoRef.current.paused: ${videoRef.current.paused}`);
+        }
+        toast({title: "Camera Issue", description: `Camera not ready: ${cameraProblem}`, variant: "warning"});
         return;
     }
+
     if (!location || !address) {
         toast({title: "Location Missing", description: "Location data is not yet available. Please wait or try refreshing location.", variant: "warning"});
         return;
@@ -520,6 +570,11 @@ const AttendancePage: NextPage = () => {
     logoutUser();
     if (faceDetectionIntervalRef.current) clearInterval(faceDetectionIntervalRef.current); 
     if (autoCaptureTimeoutRef.current) clearTimeout(autoCaptureTimeoutRef.current);
+    if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+        videoRef.current.srcObject = null;
+    }
     toast({ title: 'Logged Out', description: 'You have been successfully logged out.' });
     router.replace('/login');
   };
@@ -594,7 +649,7 @@ const AttendancePage: NextPage = () => {
               <Camera className="text-primary" /> Camera Feed
             </CardTitle>
             <CardDescription className="text-xs whitespace-pre-line min-h-[3em]">
-              {modelsLoadedError ? "See detailed error below." : // Short message if error will be detailed in overlay
+              {modelsLoadedError ? "See detailed error below." :
                hasCameraPermission === null ? "Initializing camera..." :
                hasCameraPermission === false ? "Camera access denied. Please grant permission in browser settings for this site and refresh." :
                !modelsLoaded && modelsLoading ? "Loading face models..." :
@@ -604,6 +659,7 @@ const AttendancePage: NextPage = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="relative aspect-[4/3] overflow-hidden rounded-b-lg bg-muted dark:bg-muted/30">
+            {/* Video element is always rendered to allow srcObject attachment */}
             <video
               ref={videoRef}
               className="absolute top-0 left-0 w-full h-full object-cover rounded-b-lg"
@@ -612,6 +668,8 @@ const AttendancePage: NextPage = () => {
               muted 
             />
             <canvas ref={canvasRef} className="absolute top-0 left-0 w-full h-full object-cover hidden" />
+            
+            {/* Overlays for specific states */}
             {hasCameraPermission === false && !modelsLoadedError && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-white p-4 rounded-b-lg text-center">
                 <XCircle className="w-12 h-12 mb-2 text-destructive" />
@@ -629,7 +687,6 @@ const AttendancePage: NextPage = () => {
                     <p>Loading face models...</p>
                 </div>
              )}
-            {console.log("Rendering 'Models Failed' overlay, which will cover the video feed.")}
             {modelsLoadedError && (
               <div className="absolute inset-0 flex flex-col items-center justify-center bg-destructive/90 text-destructive-foreground p-4 rounded-b-lg text-center overflow-y-auto">
                   <AlertTriangle className="w-10 h-10 mb-2 flex-shrink-0" />
@@ -738,4 +795,3 @@ const AttendancePage: NextPage = () => {
 
 export default AttendancePage;
     
-
