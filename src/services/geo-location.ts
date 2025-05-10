@@ -38,23 +38,18 @@ export const getCurrentPosition = (): Promise<GeolocationCoordinates> => {
             message = 'Location information is unavailable. Check GPS signal and network connection.';
             break;
           case error.TIMEOUT:
-             // Provide a more user-friendly timeout message
              message = 'Could not get location in time. Check GPS signal and network connection, then try again.';
             break;
           default:
             message = 'An unknown error occurred while retrieving location.';
             break;
         }
-        // Reject with the custom error, including the original code and a detailed message
-        // The error originates here when the timeout occurs, but this is expected behavior.
         reject(new GeolocationError(`${message} (Code: ${error.code})`, error.code));
       },
       {
-        enableHighAccuracy: true, // Request more accurate position
-        // Increased timeout to 20 seconds (20000 milliseconds)
-        // Adjust as needed based on testing and typical conditions
-        timeout: 20000,
-        maximumAge: 0, // Force a fresh location reading
+        enableHighAccuracy: true,
+        timeout: 20000, // Increased timeout to 20 seconds
+        maximumAge: 0,
       }
     );
   });
@@ -68,22 +63,37 @@ export const getCurrentPosition = (): Promise<GeolocationCoordinates> => {
  * @returns A promise that resolves with the address string or rejects with an error.
  */
 export const getAddressFromCoordinates = async (latitude: number, longitude: number): Promise<string> => {
+  console.log(`[GeoService] Fetching address for Lat: ${latitude}, Lon: ${longitude}`);
   try {
-    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`);
+    // IMPORTANT: As per Nominatim's usage policy, a valid User-Agent is required.
+    // Replace 'YourAppName/1.0 (your-contact-email@example.com)' with your actual app name and a contact email.
+    const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`, {
+      headers: {
+        'User-Agent': 'FieldTrackApp/1.0 (contact@ewheelslogistics.com)' // Example User-Agent
+      }
+    });
+
     if (!response.ok) {
-      throw new Error(`Nominatim API request failed with status ${response.status}`);
+      const errorText = await response.text().catch(() => 'Could not read error response body.');
+      console.error(`[GeoService] Nominatim API request failed. Status: ${response.status}. Response: ${errorText}`);
+      throw new Error(`Address lookup failed: Server responded with status ${response.status}.`);
     }
+
     const data = await response.json();
+
     if (data && data.display_name) {
+      console.log(`[GeoService] Address found: ${data.display_name}`);
       return data.display_name;
     } else {
-      // Handle cases where Nominatim doesn't return a valid address
-      console.warn('Nominatim response did not contain display_name:', data);
-      return 'Address not found';
+      console.warn('[GeoService] Nominatim response did not contain display_name or data was unexpected:', data);
+      throw new Error('Address data not found in API response. The location might be in an area with no known address (e.g., open water).');
     }
-  } catch (error) {
-    console.error("Error fetching address from coordinates:", error);
-    // Provide a generic error message if the fetch fails
-    throw new Error("Could not retrieve address from coordinates.");
+  } catch (error: any) {
+    console.error("[GeoService] Error in getAddressFromCoordinates:", error);
+    if (error.message && (error.message.startsWith('Address lookup failed:') || error.message.startsWith('Address data not found'))) {
+        throw error; // Re-throw specific, informative errors
+    }
+    // Fallback for network errors or other unexpected issues
+    throw new Error("Could not retrieve address. Please check your network connection and try refreshing the location.");
   }
 };
