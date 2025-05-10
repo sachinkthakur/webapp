@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { useToast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast'; // Corrected: Ensure this path is valid
 import { getCurrentPosition, getAddressFromCoordinates, GeolocationError } from '@/services/geo-location';
 import { saveAttendance, getEmployeeById, Employee } from '@/services/attendance';
 import { checkLoginStatus, logoutUser } from '@/services/auth';
@@ -35,7 +35,7 @@ const AttendancePage: NextPage = () => {
   const [hasCameraPermission, setHasCameraPermission] = useState<boolean | null>(null);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const [modelsLoading, setModelsLoading] = useState(false);
-  const [modelsLoadedError, setModelsLoadedError] = useState<string | null>(null); // Store error message string
+  const [modelsLoadedError, setModelsLoadedError] = useState<string | null>(null);
   const [isFaceDetected, setIsFaceDetected] = useState(false);
   const [captureCooldownActive, setCaptureCooldownActive] = useState(false);
 
@@ -143,21 +143,21 @@ const AttendancePage: NextPage = () => {
         setProgress(60);
       } catch (error: any) {
         console.error('AttendancePage: Error loading face recognition models:', error);
-        let detailedErrorMessage = 'Error: Face models failed to load.';
+        let detailedErrorMessage = 'ERROR: Face models failed to load. This is a common issue.\n';
         if (error.message && String(error.message).toLowerCase().includes('failed to fetch')) {
-          detailedErrorMessage += ' This often means a model file (like a .json or .weights file) could not be found (e.g., 404 error from server).';
-        } else if (error.message) {
-          detailedErrorMessage += ` Details: ${error.message}.`;
+          detailedErrorMessage += 'REASON: The server reported a "404 Not Found" error when trying to fetch model files. This means the files are missing from the expected location.\n';
+        } else {
+          detailedErrorMessage += `DETAILS: ${error.message}.\n`;
         }
-        detailedErrorMessage += " Please ensure all necessary face-api.js model files are present in your 'public/models' directory and that the web server can serve them. Auto-capture is disabled.";
+        detailedErrorMessage += "ACTION REQUIRED: \n1. Download the face-api.js model files. You can find them by searching for 'face-api.js models github'.\n2. Create a folder named 'models' (all lowercase) inside the 'public' directory in your project's root.\n3. Place ALL downloaded model files (e.g., .json, .weights) directly into this 'public/models' folder.\n4. After placing the files, you MUST restart your development server (e.g., stop and then rerun 'npm run dev').\nAuto-capture is disabled until models are correctly placed and loaded.";
         
         setModelsLoadedError(detailedErrorMessage);
         setStatusMessage(detailedErrorMessage); 
         toast({
-          title: 'Critical Error: Models Failed',
-          description: detailedErrorMessage + " Please refresh the page after verifying model files.",
+          title: 'CRITICAL: Face Models Missing!',
+          description: "Face models not found in 'public/models'. See status message below camera feed for detailed instructions. You need to manually add model files and restart the server.",
           variant: 'destructive',
-          duration: 15000, 
+          duration: 60000, // Increased duration
         });
       } finally {
         setModelsLoading(false);
@@ -301,13 +301,13 @@ const AttendancePage: NextPage = () => {
     } finally {
       setIsLoading(false); 
     }
-  }, [isClient, authCheckCompleted, employeeDetails, toast, isLoading]); // Added isLoading to deps
+  }, [isClient, authCheckCompleted, employeeDetails, toast, isLoading]);
 
   useEffect(() => {
     if (isClient && authCheckCompleted && employeeDetails && hasCameraPermission === true && modelsLoaded) {
         fetchLocationAndAddress();
     } else if (isClient && authCheckCompleted && employeeDetails && (hasCameraPermission === false || !modelsLoaded)) {
-        if(isLoading){ // if still in initial loading phase but camera/models not ready
+        if(isLoading){ 
              setIsLoading(false);
              if (!statusMessage.toLowerCase().includes("error") && !modelsLoadedError) {
                 setStatusMessage("Setup incomplete (camera/models). Location not fetched.");
@@ -335,9 +335,9 @@ const AttendancePage: NextPage = () => {
       if (!employeeDetails) missingInfo.push("employee details loaded");
       if (isProcessing) missingInfo.push("another process already running");
       if (captureCooldownActive) missingInfo.push("cooldown period active");
-      if (modelsLoadedError) missingInfo.push("face models failed to load");
+      if (modelsLoadedError) missingInfo.push("face models failed to load (see critical error above)");
       
-      const message = `Cannot Mark Attendance. Missing or waiting for: ${missingInfo.join(', ') || 'required information or models'}.`;
+      const message = `Cannot Mark Attendance. Missing or waiting for: ${missingInfo.join(', ') || 'required information or models'}. ${modelsLoadedError ? "Fix model loading issue first." : ""}`;
       console.warn(`AttendancePage: Attendance capture skipped. Method: ${method}. ${message}`);
       if (method === 'manual' && !captureCooldownActive) { 
         toast({ title: 'Cannot Mark Attendance', description: message, variant: 'warning' });
@@ -457,9 +457,9 @@ const AttendancePage: NextPage = () => {
                     clearTimeout(autoCaptureTimeoutRef.current);
                     autoCaptureTimeoutRef.current = null;
                 }
-                 if (faceConfidence <= 0.75 && isSmiling && !statusMessage.includes("capturing") && !statusMessage.includes("marked")) setStatusMessage("Face not clear enough. Adjust position.");
-                 else if (faceConfidence > 0.75 && !isSmiling && !statusMessage.includes("capturing") && !statusMessage.includes("marked")) setStatusMessage("Please smile for the camera!");
-                 else if (!statusMessage.includes("capturing") && !statusMessage.includes("marked")) setStatusMessage("Position your face in the center and smile for auto-capture.");
+                 if (faceConfidence <= 0.75 && isSmiling && !statusMessage.includes("capturing") && !statusMessage.includes("marked") && !statusMessage.toLowerCase().includes("error")) setStatusMessage("Face not clear enough. Adjust position.");
+                 else if (faceConfidence > 0.75 && !isSmiling && !statusMessage.includes("capturing") && !statusMessage.includes("marked") && !statusMessage.toLowerCase().includes("error")) setStatusMessage("Please smile for the camera!");
+                 else if (!statusMessage.includes("capturing") && !statusMessage.includes("marked") && !statusMessage.toLowerCase().includes("error")) setStatusMessage("Position your face in the center and smile for auto-capture.");
             }
           } else { 
             setIsFaceDetected(false);
@@ -467,7 +467,7 @@ const AttendancePage: NextPage = () => {
                 clearTimeout(autoCaptureTimeoutRef.current);
                 autoCaptureTimeoutRef.current = null;
             }
-             if (!statusMessage.includes("capturing") && !statusMessage.includes("marked")) setStatusMessage("No face detected. Ensure good lighting and clear view.");
+             if (!statusMessage.includes("capturing") && !statusMessage.includes("marked") && !statusMessage.toLowerCase().includes("error")) setStatusMessage("No face detected. Ensure good lighting and clear view.");
           }
         }
       }, 1000); 
@@ -492,7 +492,7 @@ const AttendancePage: NextPage = () => {
         return;
     }
     if (modelsLoadedError) {
-        toast({title: "Models Error", description: `Face models failed: ${modelsLoadedError}. Cannot capture.`, variant: "destructive"});
+        toast({title: "Models Error", description: `Face models failed. Cannot capture. Please fix model loading issue (see message above camera).`, variant: "destructive"});
         return;
     }
     if (hasCameraPermission !== true || !videoRef.current?.srcObject) {
@@ -529,9 +529,7 @@ const AttendancePage: NextPage = () => {
   };
 
 
-  const overallInitialLoading = isLoading && !modelsLoadedError && progress < 100 && !locationError && authCheckCompleted && employeeDetails;
-
-  if (!isClient || !authCheckCompleted || !employeeDetails) { // Early exit if auth or employee details not ready
+  if (!isClient || !authCheckCompleted || !employeeDetails) { 
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-100 to-gray-300 dark:from-gray-800 dark:to-gray-900 p-4">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
@@ -543,8 +541,6 @@ const AttendancePage: NextPage = () => {
     );
   }
 
-  // This loading state covers model loading, camera permission, and initial location fetch
-  // AFTER auth and employee details are confirmed.
   if (isLoading && (!modelsLoaded || hasCameraPermission === null || !location) && !modelsLoadedError && !locationError) {
      return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-gray-100 to-gray-300 dark:from-gray-800 dark:to-gray-900 p-4">
@@ -572,7 +568,7 @@ const AttendancePage: NextPage = () => {
         <div className="flex items-center gap-2">
             <div className="p-2 bg-primary/10 rounded-full">
              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-primary">
-               <path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.035-.84-1.875-1.875-1.875h-.75ZM9.75 8.625c0-1.035.84-1.875 1.875-1.875h.75c1.035 0 1.875.84 1.875 1.875V21.75c0 1.035-.84 1.875 1.875 1.875h-.75c-1.035 0-1.875-.84-1.875-1.875V8.625ZM3 13.125c0-1.035.84-1.875 1.875-1.875h.75c1.035 0 1.875.84 1.875 1.875V21.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 0 1 3 21.75V13.125Z" />
+               <path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.035-.84-1.875-1.875-1.875h-.75ZM9.75 8.625c0-1.035.84-1.875 1.875-1.875h.75c1.035 0 1.875.84 1.875 1.875V21.75c0 1.035-.84-1.875 1.875 1.875h-.75c-1.035 0-1.875-.84-1.875-1.875V8.625ZM3 13.125c0-1.035.84-1.875 1.875-1.875h.75c1.035 0 1.875.84 1.875 1.875V21.75c0 1.035-.84-1.875 1.875 1.875h-.75A1.875 1.875 0 0 1 3 21.75V13.125Z" />
              </svg>
             </div>
             <div>
@@ -591,7 +587,7 @@ const AttendancePage: NextPage = () => {
             <CardTitle className="flex items-center gap-2 text-xl">
               <Camera className="text-primary" /> Camera Feed
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="text-xs whitespace-pre-line">
               {modelsLoadedError ? modelsLoadedError : 
                hasCameraPermission === null ? "Initializing camera..." :
                hasCameraPermission === false ? "Camera access denied. Please grant permission." :
@@ -628,11 +624,12 @@ const AttendancePage: NextPage = () => {
                 </div>
              )}
              {modelsLoadedError && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-destructive/80 text-white p-4 rounded-b-lg text-center">
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-destructive/80 text-destructive-foreground p-4 rounded-b-lg text-center">
                     <AlertTriangle className="w-12 h-12 mb-2" />
-                    <p>{modelsLoadedError}</p>
-                     <Button onClick={() => window.location.reload()} className="mt-2" size="sm" variant="secondary">
-                        <RefreshCw className="mr-2 h-3 w-3" /> Refresh
+                    <p className="font-semibold">Critical Error: Models Failed</p>
+                    <p className="text-xs whitespace-pre-line">{modelsLoadedError}</p>
+                     <Button onClick={() => window.location.reload()} className="mt-3" size="sm" variant="secondary">
+                        <RefreshCw className="mr-2 h-3 w-3" /> Refresh Page
                      </Button>
                 </div>
              )}
@@ -692,7 +689,7 @@ const AttendancePage: NextPage = () => {
                      (isLoading && progress < 100) || modelsLoading ? <Loader2 className="h-5 w-5 animate-spin mr-2 text-primary" /> :
                      <Camera className="h-5 w-5 mr-2 text-muted-foreground" />
                     }
-                    <span className={`${statusMessage.toLowerCase().includes("error:") || modelsLoadedError || locationError ? 'text-destructive' : (statusMessage.toLowerCase().includes("success") || statusMessage.toLowerCase().includes("ready")) ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
+                    <span className={`${statusMessage.toLowerCase().includes("error:") || modelsLoadedError || locationError ? 'text-destructive' : (statusMessage.toLowerCase().includes("success") || statusMessage.toLowerCase().includes("ready")) ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'} whitespace-pre-line text-xs`}>
                         {statusMessage}
                     </span>
                 </div>
@@ -720,10 +717,9 @@ const AttendancePage: NextPage = () => {
                 <p className="text-xs text-center text-muted-foreground/80">
                     {captureCooldownActive ? "Please wait before trying again." : 
                      (modelsLoaded && !modelsLoadedError && hasCameraPermission === true && location && address && !isLoading && !isProcessing) ? "Auto-capture active if face is clear and smiling." : 
-                     modelsLoadedError ? "Face models failed. Auto-capture disabled." :
+                     modelsLoadedError ? "Face models failed. Auto-capture disabled. Follow instructions above camera feed." :
                      "Ensure camera, location & models are ready for attendance."}
                 </p>
-                {modelsLoadedError && !statusMessage.includes("Face models failed") && <p className="text-xs text-center text-destructive">Face models failed to load. Manual capture might not work. Please refresh.</p>}
             </CardContent>
         </Card>
       </main>
@@ -732,3 +728,5 @@ const AttendancePage: NextPage = () => {
 };
 
 export default AttendancePage;
+
+    
