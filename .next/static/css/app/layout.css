@@ -657,6 +657,9 @@ video {
 .invisible {
   visibility: hidden;
 }
+.static {
+  position: static;
+}
 .fixed {
   position: fixed;
 }
@@ -829,6 +832,9 @@ video {
 }
 .max-h-\[100px\] {
   max-height: 100px;
+}
+.max-h-\[120px\] {
+  max-height: 120px;
 }
 .min-h-\[40px\] {
   min-height: 40px;
@@ -1190,6 +1196,9 @@ video {
 }
 .bg-destructive\/90 {
   background-color: hsl(var(--destructive) / 0.9);
+}
+.bg-destructive\/30 {
+  background-color: hsl(var(--destructive) / 0.3);
 }
 .bg-gradient-to-br {
   background-image: linear-gradient(to bottom right, var(--tw-gradient-stops));

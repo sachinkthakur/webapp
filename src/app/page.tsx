@@ -1,7 +1,7 @@
 'use client';
 
 import type { NextPage } from 'next';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import * as faceapi from 'face-api.js';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,7 @@ import { saveAttendance, getEmployeeById, Employee } from '@/services/attendance
 import { checkLoginStatus, logoutUser } from '@/services/auth';
 import { Camera, MapPin, User, LogOut, Loader2, AlertTriangle, CheckCircle, RefreshCw, XCircle } from 'lucide-react';
 import Image from 'next/image';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 
 const AttendancePage: NextPage = () => {
@@ -82,36 +83,38 @@ const AttendancePage: NextPage = () => {
   }, [isClient, router, toast]);
 
 
-  useEffect(() => {
-    if (!isClient || !authCheckCompleted || !loggedInUserPhone) return;
-
-    const fetchDetails = async () => {
-      setStatusMessage("Fetching employee details...");
-      setProgress(30);
-      console.log("AttendancePage: Fetching employee details for phone:", loggedInUserPhone);
-      try {
-        const details = await getEmployeeById(loggedInUserPhone);
-        if (details) {
-          setEmployeeDetails(details);
-          console.log("AttendancePage: Employee details fetched:", details);
-          setStatusMessage("Employee details loaded.");
-          setProgress(40);
-        } else {
-          toast({ title: 'Error', description: 'Could not find employee details. Please contact support.', variant: 'destructive' });
-          setStatusMessage("Error: Employee details not found.");
-          logoutUser();
-          router.replace('/login');
-        }
-      } catch (error) {
-        console.error("AttendancePage: Error fetching employee details:", error);
-        toast({ title: 'Error', description: 'Failed to fetch employee details.', variant: 'destructive' });
-        setStatusMessage("Error: Could not fetch employee details.");
+  const fetchEmployeeDetails = useCallback(async () => {
+    if (!loggedInUserPhone) return;
+    setStatusMessage("Fetching employee details...");
+    setProgress(30);
+    console.log("AttendancePage: Fetching employee details for phone:", loggedInUserPhone);
+    try {
+      const details = await getEmployeeById(loggedInUserPhone);
+      if (details) {
+        setEmployeeDetails(details);
+        console.log("AttendancePage: Employee details fetched:", details);
+        setStatusMessage("Employee details loaded.");
+        setProgress(40);
+      } else {
+        toast({ title: 'Error', description: 'Could not find employee details. Please contact support.', variant: 'destructive' });
+        setStatusMessage("Error: Employee details not found.");
         logoutUser();
         router.replace('/login');
       }
-    };
-    fetchDetails();
-  }, [isClient, authCheckCompleted, loggedInUserPhone, router, toast]);
+    } catch (error) {
+      console.error("AttendancePage: Error fetching employee details:", error);
+      toast({ title: 'Error', description: 'Failed to fetch employee details.', variant: 'destructive' });
+      setStatusMessage("Error: Could not fetch employee details.");
+      logoutUser();
+      router.replace('/login');
+    }
+  }, [loggedInUserPhone, router, toast]);
+
+  useEffect(() => {
+    if (isClient && authCheckCompleted && loggedInUserPhone && !employeeDetails) {
+      fetchEmployeeDetails();
+    }
+  }, [isClient, authCheckCompleted, loggedInUserPhone, employeeDetails, fetchEmployeeDetails]);
 
 
    useEffect(() => {
@@ -136,25 +139,34 @@ const AttendancePage: NextPage = () => {
       } catch (error: any) {
         console.error('AttendancePage: Error loading face recognition models:', error);
         let detailedErrorMessage = 'CRITICAL: Face models failed to load. Auto-capture is disabled.\n\n';
+        let failedUrlPart = '';
+        if (error.message) {
+            const urlMatch = String(error.message).match(/from url: (https?:\/\/[^\s]+)/);
+            if (urlMatch && urlMatch[1]) {
+                failedUrlPart = `(e.g., failed to fetch: ${urlMatch[1]})`;
+            }
+        }
+
         if (error.message && String(error.message).toLowerCase().includes('failed to fetch')) {
-          detailedErrorMessage += 'REASON: The server reported a "404 Not Found" error when trying to fetch model files. This means the model files are missing from the expected public path OR THE SERVER NEEDS A RESTART after adding them to the `public/models` directory.\n\n';
+            detailedErrorMessage += `REASON: The server reported a "404 Not Found" error when trying to fetch model files ${failedUrlPart}. This means the model files are missing OR THE SERVER NEEDS A RESTART after adding them.\n\n`;
         } else {
-          detailedErrorMessage += `DETAILS: ${error.message}.\n\n`;
+            detailedErrorMessage += `DETAILS: ${error.message || 'Unknown error.'}\n\n`;
         }
         detailedErrorMessage += "ACTION REQUIRED (Please follow carefully):\n";
-        detailedErrorMessage += "1. Ensure you have downloaded ALL the necessary face-api.js model files (e.g., .json manifest files AND .weights files for each model).\n";
+        detailedErrorMessage += "1. Ensure you have downloaded ALL the necessary face-api.js model files (e.g., .json manifest files AND .weights files for EACH model - tinyFaceDetector, faceLandmark68Net, faceRecognitionNet, faceExpressionNet).\n";
         detailedErrorMessage += "2. In your project, find the 'public' folder. Create a subfolder named 'models' (all lowercase) INSIDE 'public'. The path should be `public/models/`.\n";
         detailedErrorMessage += "3. Place ALL downloaded model files directly into this `public/models/` folder. Do NOT put them in sub-subfolders.\n";
-        detailedErrorMessage += "4. CRUCIAL: After placing the files, you MUST RESTART your development server (e.g., stop 'npm run dev' and run it again).\n";
-        detailedErrorMessage += "5. If the error persists after restart, double-check that the file names in `public/models/` exactly match what face-api.js expects (e.g., 'tiny_face_detector_model-weights_manifest.json', 'tiny_face_detector_model-shard1', etc.). Check for typos and ensure all required files are present.\n";
+        detailedErrorMessage += "4. CRUCIAL: After placing the files, you MUST RESTART your development server (e.g., stop 'npm run dev' and run it again). If deployed, ensure the deployment includes these files and the server is restarted/updated.\n";
+        detailedErrorMessage += "5. If the error persists, double-check file names in `public/models/` for typos and ensure all parts of each model (manifests, shards/weights) are present. Verify the server is correctly serving static files from the 'public' directory.\n";
         
         setModelsLoadedError(detailedErrorMessage);
-        setStatusMessage(`Error: ${detailedErrorMessage}`); 
+        // Update status bar message to be less verbose, main detail is in camera feed.
+        setStatusMessage(`Error: Face models failed. See details in camera feed area.`); 
         toast({
           title: 'CRITICAL: Face Models Missing/Error!',
-          description: "Face models could not be loaded. See status message below camera for detailed instructions. Ensure models are in 'public/models' and server was restarted if files were added.",
+          description: "Face models could not be loaded. The camera feed area shows detailed instructions. Ensure models are in 'public/models' and server was restarted if files were added recently.",
           variant: 'destructive',
-          duration: 60000,
+          duration: 90000, // Longer duration for critical error
         });
       } finally {
         setModelsLoading(false);
@@ -261,7 +273,7 @@ const AttendancePage: NextPage = () => {
   const fetchLocationAndAddress = useCallback(async () => {
     if (!isClient || !authCheckCompleted || !employeeDetails) {
       console.log("AttendancePage: fetchLocationAndAddress skipped, conditions not met.");
-      if (isLoading && !statusMessage.toLowerCase().includes("error")) setIsLoading(false); // Only stop loading if not already in error for location
+      if (isLoading && !statusMessage.toLowerCase().includes("error")) setIsLoading(false);
       return;
     }
     
@@ -269,8 +281,8 @@ const AttendancePage: NextPage = () => {
     setIsLoading(true); 
     setStatusMessage("Getting your current location...");
     setLocationError(null); 
-    setAddress(null); // Reset address
-    setLocation(null); // Reset location
+    setAddress(null); 
+    setLocation(null); 
     setProgress(85);
 
     try {
@@ -285,12 +297,12 @@ const AttendancePage: NextPage = () => {
       console.log("AttendancePage: Address fetched:", addr);
       setStatusMessage("Location and address ready.");
       setProgress(100);
-      setLocationError(null); // Clear any previous location error
+      setLocationError(null); 
     } catch (error: any) {
       console.error('AttendancePage: Error fetching location or address:', error);
       let userFriendlyMessage = 'Could not get location or address. Ensure GPS/network active & browser permissions granted for this site.';
       if (error instanceof GeolocationError) {
-        userFriendlyMessage = error.message; // e.g., "User denied...", "Timeout..."
+        userFriendlyMessage = error.message; 
       } else if (error.message && error.message.toLowerCase().includes("could not retrieve address")) {
         userFriendlyMessage = "Location found, but address lookup failed. Check network or try refreshing location.";
       } else if (error.message) {
@@ -303,17 +315,17 @@ const AttendancePage: NextPage = () => {
     } finally {
       setIsLoading(false); 
     }
-  }, [isClient, authCheckCompleted, employeeDetails, toast]); // Removed isLoading from deps
+  }, [isClient, authCheckCompleted, employeeDetails, toast, isLoading, statusMessage]); 
 
   useEffect(() => {
     if (isClient && authCheckCompleted && employeeDetails && hasCameraPermission === true && modelsLoaded && !modelsLoadedError) {
-        if (!location && !locationError) { // Fetch only if location not already set and no error
+        if (!location && !locationError) { 
              fetchLocationAndAddress();
         }
     } else if (isClient && authCheckCompleted && employeeDetails && (hasCameraPermission === false || !modelsLoaded || modelsLoadedError)) {
-        if(isLoading && !statusMessage.toLowerCase().includes("error")){ // Only stop loading if not already in a specific error state
+        if(isLoading && !statusMessage.toLowerCase().includes("error")){ 
              setIsLoading(false);
-             if (!modelsLoadedError && hasCameraPermission !== false) { // Avoid overwriting critical model/camera errors
+             if (!modelsLoadedError && hasCameraPermission !== false) { 
                 setStatusMessage("Setup incomplete (camera/models). Location not fetched.");
              }
         }
@@ -382,8 +394,6 @@ const AttendancePage: NextPage = () => {
       setProgress(100);
       toast({ title: 'Attendance Marked', description: `Successfully marked for ${employeeDetails.name}.`, variant: 'default' }); 
       console.log("AttendancePage: Attendance saved successfully.", attendanceData);
-      // Optionally, re-fetch location after marking, or clear it to show it was used.
-      // setLocation(null); setAddress(null); setLocationError("Attendance marked. Refresh for new location.");
 
     } catch (error: any) {
       console.error('AttendancePage: Error saving attendance:', error);
@@ -515,7 +525,6 @@ const AttendancePage: NextPage = () => {
   };
 
   const handleRefreshLocation = () => {
-    // Allow refresh if not currently loading initial location OR if there's an existing error
     if (!isLoading || locationError) {
       fetchLocationAndAddress(); 
     } else {
@@ -536,7 +545,6 @@ const AttendancePage: NextPage = () => {
     );
   }
   
-  // More specific loading screen if vital components are still setting up
   const showGeneralLoadingScreen = isLoading && (!modelsLoaded || hasCameraPermission === null || (!location && !locationError)) && !modelsLoadedError;
 
   if (showGeneralLoadingScreen) {
@@ -566,7 +574,7 @@ const AttendancePage: NextPage = () => {
         <div className="flex items-center gap-2">
             <div className="p-2 bg-primary/10 rounded-full">
              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-primary">
-               <path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.035-.84-1.875-1.875-1.875h-.75ZM9.75 8.625c0-1.035.84-1.875 1.875-1.875h.75c1.035 0 1.875.84 1.875 1.875V21.75c0 1.035-.84 1.875 1.875 1.875h-.75c-1.035 0-1.875-.84-1.875-1.875V8.625ZM3 13.125c0-1.035.84-1.875 1.875-1.875h.75c1.035 0 1.875.84 1.875 1.875V21.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 0 1 3 21.75V13.125Z" />
+               <path d="M18.375 2.25c-1.035 0-1.875.84-1.875 1.875v15.75c0 1.035.84 1.875 1.875 1.875h.75c1.035 0 1.875-.84 1.875-1.875V4.125c0-1.035-.84-1.875-1.875-1.875h-.75ZM9.75 8.625c0-1.035.84-1.875 1.875-1.875h.75c1.035 0 1.875.84 1.875 1.875V21.75c0 1.035-.84 1.875-1.875 1.875h-.75c-1.035 0-1.875-.84-1.875-1.875V8.625ZM3 13.125c0-1.035.84-1.875 1.875-1.875h.75c1.035 0 1.875.84 1.875 1.875V21.75c0 1.035-.84 1.875-1.875 1.875h-.75A1.875 1.875 0 0 1 3 21.75V13.125Z" />
              </svg>
             </div>
             <div>
@@ -586,7 +594,7 @@ const AttendancePage: NextPage = () => {
               <Camera className="text-primary" /> Camera Feed
             </CardTitle>
             <CardDescription className="text-xs whitespace-pre-line min-h-[3em]">
-              {modelsLoadedError ? modelsLoadedError : 
+              {modelsLoadedError ? "See detailed error below." : // Short message if error will be detailed in overlay
                hasCameraPermission === null ? "Initializing camera..." :
                hasCameraPermission === false ? "Camera access denied. Please grant permission in browser settings for this site and refresh." :
                !modelsLoaded && modelsLoading ? "Loading face models..." :
@@ -621,18 +629,19 @@ const AttendancePage: NextPage = () => {
                     <p>Loading face models...</p>
                 </div>
              )}
-             {modelsLoadedError && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center bg-destructive/90 text-destructive-foreground p-4 rounded-b-lg text-center overflow-y-auto">
-                    <AlertTriangle className="w-10 h-10 mb-2 flex-shrink-0" />
-                    <p className="font-semibold text-base mb-1">Critical Error: Models Failed</p>
-                    <ScrollArea className="max-h-[100px] text-xs whitespace-pre-line text-left px-2 mb-2">
-                       {modelsLoadedError}
-                    </ScrollArea>
-                     <Button onClick={() => window.location.reload()} className="mt-2" size="sm" variant="secondary">
-                        <RefreshCw className="mr-2 h-3 w-3" /> Refresh Page
-                     </Button>
-                </div>
-             )}
+            {console.log("Rendering 'Models Failed' overlay, which will cover the video feed.")}
+            {modelsLoadedError && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-destructive/90 text-destructive-foreground p-4 rounded-b-lg text-center overflow-y-auto">
+                  <AlertTriangle className="w-10 h-10 mb-2 flex-shrink-0" />
+                  <p className="font-semibold text-base mb-1">Critical Error: Models Failed</p>
+                  <ScrollArea className="max-h-[120px] text-xs whitespace-pre-line text-left px-2 mb-2 bg-destructive/30 rounded-sm py-1">
+                     {modelsLoadedError}
+                  </ScrollArea>
+                   <Button onClick={() => window.location.reload()} className="mt-2" size="sm" variant="secondary">
+                      <RefreshCw className="mr-2 h-3 w-3" /> Refresh Page
+                   </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -707,7 +716,7 @@ const AttendancePage: NextPage = () => {
                         !!locationError || 
                         !location || 
                         !address ||
-                        (isLoading && (!location && !locationError)) // Disable if initial location fetch is ongoing without error
+                        (isLoading && (!location && !locationError)) 
                     }
                     aria-label="Mark Attendance Manually"
                   >
@@ -729,3 +738,4 @@ const AttendancePage: NextPage = () => {
 
 export default AttendancePage;
     
+
